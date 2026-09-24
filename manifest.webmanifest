@@ -1,0 +1,14 @@
+{
+  "name": "ZTF Imitators",
+  "short_name": "ZTF Imitators",
+  "description": "Suivi des domaines de la vie chrétienne du Pr Zacharias Tannee Fomum",
+  "lang": "fr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#4db3f2",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

@@ -1,0 +1,4 @@
+Déposez ici une image par domaine, au format .jpg (environ 800x800 px, moins de 150 Ko) :
+jeune.jpg  priere.jpg  rdqd.jpg  finances.jpg  louange.jpg
+bible.jpg  litterature.jpg  evangelisation.jpg  service.jpg  bertoua.jpg
+Sans image, l'icône bleue est affichée à la place.
