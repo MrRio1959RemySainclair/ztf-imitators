@@ -125,8 +125,11 @@ function viewAuth(mode) {
 }
 
 function viewHome(u) {
-  $('#app').innerHTML = `${hero('ZTF Imitators', 'Bienvenue, '+esc(u.nom.split(' ')[0]), '<a class="pill" href="#/profil">Mon compte</a>')}
-  <main><h2>Domaines d'imitation</h2><ul class="grid">${DOMAINS.map((d, i) => `<li style="--i:${i}"><a class="tile" href="#/d/${d.id}"><img class="bg" src="img/${d.id}.jpg" alt="" loading="lazy" onload="this.parentNode.classList.add('has-img')" onerror="this.remove()">${ic(d.icon)}<span>${d.label}</span></a></li>`).join('')}</ul></main>`;
+  $('#app').innerHTML = `${hero('ZTF Imitators', 'Bienvenue, '+esc(u.nom.split(' ')[0]) + '<p class="hero-subtitle">Veuillez sélectionner un domaine pour rendre compte</p>', '<a class="pill" href="#/profil">Mon compte</a>')}
+  <main>
+    <h2>Domaines d'imitation</h2>
+    <ul class="grid">${DOMAINS.map((d, i) => `<li style="--i:${i}"><a class="tile" href="#/d/${d.id}"><img class="bg" src="img/${d.id}.jpg" alt="" loading="lazy" onload="this.parentNode.classList.add('has-img')" onerror="this.remove()">${ic(d.icon)}<span>${d.label}</span></a></li>`).join('')}</ul>
+  </main>`;
 }
 
 function viewForm(d) {
