@@ -3,6 +3,29 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const ic = p => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
 const LOGO = ic('<path d="M12 9c-1.5-1-3.3-1.5-5.5-1.5v8c2.2 0 4 .5 5.5 1.5 1.5-1 3.3-1.5 5.5-1.5v-8C15.3 7.5 13.5 8 12 9zM12 9v8M12 3.5v3M10.5 5h3"/>');
+const DL_ICON = ic('<path d="M12 3v12m0 0l-4.5-4.5M12 15l4.5-4.5M4.5 19h15"/>');
+
+/* ---------- Installation de la PWA ---------- */
+let deferredPrompt = null;
+const isStandalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) && !window.MSStream;
+addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredPrompt = e; updateInstallUI(); });
+addEventListener('appinstalled', () => { deferredPrompt = null; updateInstallUI(); });
+function updateInstallUI() {
+  document.querySelectorAll('#installBtn').forEach(b => {
+    if (isStandalone) { b.hidden = true; return; }
+    b.hidden = !(deferredPrompt || isIOS);
+    b.dataset.mode = deferredPrompt ? 'prompt' : 'ios';
+  });
+}
+document.addEventListener('click', async e => {
+  const b = e.target.closest('#installBtn'); if (!b) return;
+  if (b.dataset.mode === 'prompt' && deferredPrompt) {
+    deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt = null; updateInstallUI();
+  } else {
+    toast("Sur iPhone : appuyez sur Partager, puis « Sur l'écran d'accueil »");
+  }
+});
 
 /* ---------- Domaines ----------
    Pour ajouter un questionnaire : remplir `fields` avec des objets
@@ -33,17 +56,90 @@ const EVANGELISATION = [
   { name:'objectifs', label:'Quels sont tes objectifs pour le mois prochain ?', type:'textarea' },
 ];
 
+const SERVICE = [
+  { name:'prevu', label: "Qu'as-tu prévu de faire pour servir tes autorités ?", type:'textarea', required:true, hint:'Exemples : parents, faiseurs de disciples, dirigeants, responsables d\'église, etc.' },
+  { name:'fait', label: "Qu'as-tu effectivement fait pour servir tes autorités ?", type:'textarea', required:true },
+  N('actes', 'Combien de fois as-tu posé un acte concret de service ?'),
+  { name:'autorites', label:'Auprès de quelles autorités as-tu servi ?', type:'checkbox', options:['Parents','Faiseur(s) de disciple','Dirigeant(s)','Responsable(s) d\'église','Autre(s)'] },
+  { name:'realisation', label:'Ton engagement a-t-il été réalisé ?', type:'radio', required:true, options:['Entièrement','En grande partie','Partiellement','Pas encore'] },
+  { name:'non_realise', label:"Si nécessaire, explique ce qui n'a pas été réalisé.", type:'textarea' },
+  { name:'temoignage', label:'Quel témoignage peux-tu partager concernant ton service ?', type:'textarea' },
+  { name:'engagement', label:'Quel est ton engagement de service pour le mois prochain ?', type:'textarea', required:true },
+  N('encourages', 'Combien de personnes comptes-tu encourager à faire de même le mois prochain ?', 'personnes'),
+];
+
+const LITTERATURE = [
+  { name:'mois', label:'Mois concerné par ce compte rendu', type:'month', required:true },
+  N('ztf_engages', 'Combien de livres ZTF vous étiez-vous engagé(e) à lire ?'),
+  N('ztf_acheves', 'Combien de livres ZTF avez-vous effectivement achevés ce mois-ci ?'),
+  { name:'ztf_titres', label:'Quels livres ZTF avez-vous lus durant cette période ?', type:'textarea' },
+  { name:'resume', label:'Avez-vous préparé un résumé des livres lus ?', type:'radio', required:true, options:['Oui','En partie','Non'] },
+  N('chemin_engages', 'Combien de livres de la série « Le Chemin » vous étiez-vous engagé(e) à lire ?'),
+  { name:'chemin_titres', label:'Quels livres de la série « Le Chemin » avez-vous lus ?', type:'textarea' },
+  { name:'enseignement', label:'Quel enseignement principal avez-vous retenu de vos lectures ?', type:'textarea', required:true },
+  { name:'temoignage', label:'Quel témoignage souhaitez-vous partager ?', type:'textarea' },
+  N('encourages', 'Combien de personnes avez-vous effectivement encouragées ?', 'personnes'),
+  N('ont_commence', 'Combien de ces personnes ont commencé à lire ?', 'personnes'),
+  { name:'accompagnement', label:'Comment les avez-vous encouragées ou accompagnées ?', type:'textarea' },
+  { name:'engagement_prochain', label:'Quels livres vous engagez-vous à lire durant le prochain mois ?', type:'textarea', required:true },
+  N('a_achever', 'Combien de livres comptez-vous achever le mois prochain ?'),
+];
+
+const BERTOUA = [
+  { name:'mois', label:'Mois concerné', type:'month', required:true },
+  { name:'engagement_pris', label:"Combien de fois t'étais-tu engagé(e) à faire chaque unité d'enseignement ?", type:'radio', required:true, options:['7 fois','12 fois'] },
+  N('etudiees', "Combien d'unités d'enseignement du message de Bertoua as-tu étudiées durant ce mois ?"),
+  N('enseignees', "Combien d'unités d'enseignement du message de Bertoua as-tu enseignées durant ce mois ?"),
+  { name:'realisation', label:'Quel a été ton niveau de réalisation de cet engagement ?', type:'radio', required:true, options:['Entièrement réalisé','Réalisé en grande partie','Partiellement réalisé','Pas encore réalisé'] },
+  N('personnes_enseignees', 'À combien de personnes as-tu enseigné le message de Bertoua ?', 'personnes'),
+];
+
+const BIBLE = [
+  { name:'mois', label:'Mois concerné', type:'month', required:true },
+  { name:'engagement_pris', label:"Combien de fois vous étiez-vous engagé(e) à achever la lecture de la Bible ?", type:'radio', required:true, options:['1 fois','2 fois','3 fois'] },
+  { name:'quotidienne', label:'Avez-vous lu votre Bible chaque jour durant cette période ?', type:'radio', required:true, options:['Oui, tous les jours','Presque tous les jours','Certains jours seulement'] },
+  { name:'portion', label:'Quelle portion de la Bible avez-vous lue ce mois-ci ?' },
+  { name:'raisons', label:"Si vous n'avez pas entièrement réalisé votre engagement, quelles en sont les raisons ?", type:'textarea' },
+  { name:'fidelite', label:'Qu\'est-ce qui vous a aidé à rester fidèle dans la lecture de la Bible ?', type:'textarea' },
+  { name:'enseignement', label:'Avez-vous tiré un enseignement particulier de votre lecture durant cette période ?', type:'textarea' },
+  { name:'temoignage', label:'Quel témoignage souhaitez-vous partager concernant votre lecture de la Bible ?', type:'textarea' },
+  N('encourages', 'Combien de personnes allez-vous encourager à faire de même ?', 'personnes'),
+];
+
+const FINANCES = [
+  { name:'mois', label:'Mois concerné par ce compte rendu', type:'month', required:true },
+  { name:'budget_etabli', label:'Avez-vous établi un budget pour ce mois ?', type:'radio', required:true, options:['Oui','Non'] },
+  { name:'budget_utilise', label:'Avez-vous effectivement utilisé votre budget pour gérer vos dépenses ?', type:'radio', required:true, options:['Oui, régulièrement','En partie','Non'] },
+  { name:'budget_raisons', label:"Si vous n'avez pas pu respecter votre budget, quelles en sont les raisons ?", type:'textarea' },
+  { name:'dime_fidelite', label:'Avez-vous été fidèle à donner votre dîme durant ce mois-ci ?', type:'radio', required:true, options:['Oui','Partiellement','Non'] },
+  { name:'offrande_engagement', label:'Vous étiez-vous engagé(e) à ajouter une offrande ?', type:'radio', options:['Oui','Non'] },
+  { name:'offrande_donnee', label:'Avez-vous donné une offrande durant cette période ?', type:'radio', options:['Oui','Non'] },
+  { name:'pct_dime', label:'Quel est votre pourcentage de don à Dieu — Dîme (%)', type:'number', attrs:'min="0" max="100" inputmode="numeric"' },
+  { name:'pct_offrande', label:'Quel est votre pourcentage de don à Dieu — Offrandes (%)', type:'number', attrs:'min="0" max="100" inputmode="numeric"' },
+  { name:'epargne_engagement', label:'Vous étiez-vous engagé(e) à épargner chaque mois ?', type:'radio', options:['Oui','Non'] },
+  { name:'epargne_faite', label:'Avez-vous épargné durant ce mois ?', type:'radio', options:['Oui','Non'] },
+  { name:'epargne_maintenue', label:"Avez-vous pu maintenir votre engagement d'épargne malgré vos autres dépenses ?", type:'radio', options:['Oui','Partiellement','Non'] },
+  { name:'endette', label:'Êtes-vous actuellement endetté(e) ?', type:'radio', required:true, options:['Oui','Non'] },
+  { name:'dettes_liste', label:'Avez-vous établi la liste de vos dettes et des personnes envers lesquelles vous êtes engagé(e) ?', type:'radio', options:['Oui','Non'], showIf:{ name:'endette', equals:'Oui' } },
+  { name:'dettes_plan', label:'Avez-vous établi un plan de remboursement de vos dettes ?', type:'radio', options:['Oui','En cours','Non'], showIf:{ name:'endette', equals:'Oui' } },
+  { name:'dettes_remboursement', label:'Avez-vous effectué au moins un remboursement durant cette période ?', type:'radio', options:['Oui','Non'], showIf:{ name:'endette', equals:'Oui' } },
+  { name:'dettes_pct', label:'Quel pourcentage de votre dette avez-vous payé ?', type:'number', attrs:'min="0" max="100" inputmode="numeric"', showIf:{ name:'endette', equals:'Oui' } },
+  { name:'dettes_difficultes', label:'Quelles difficultés rencontrez-vous dans le remboursement de vos dettes ?', type:'textarea', showIf:{ name:'endette', equals:'Oui' } },
+  { name:'amelioration', label:'Quel aspect de votre gestion financière avez-vous le mieux amélioré ?', type:'textarea' },
+  { name:'temoignage', label:'Quel témoignage souhaitez-vous partager concernant votre gestion financière ?', type:'textarea' },
+];
+
 const DOMAINS = [
   { id:'jeune',     label:'Jeûne',                   icon:'<circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="2.5"/><path d="M4 4l16 16"/>', fields:[] },
   { id:'priere',    label:'Prière',                  icon:'<path d="M12 4c-3 3-4 7-4 11l4 5 4-5c0-4-1-8-4-11zM12 4v16"/>', fields:[] },
   { id:'rdqd',      label:'RDQD / Méditation',       icon:'<path d="M3 18h18M6 18a6 6 0 0112 0M12 6V3M4.6 9.6L3 8M19.4 9.6L21 8"/>', fields:[] },
-  { id:'finances',  label:'Finances',                icon:'<circle cx="12" cy="12" r="9"/><path d="M9 9.5c0-1 1-2 3-2s3 1 3 2-1 1.6-3 2-3 1-3 2 1 2 3 2 3-1 3-2M12 6v1.5M12 16.5V18"/>', fields:[] },
+  { id:'finances',  label:'Finances',                icon:'<circle cx="12" cy="12" r="9"/><path d="M9 9.5c0-1 1-2 3-2s3 1 3 2-1 1.6-3 2-3 1-3 2 1 2 3 2 3-1 3-2M12 6v1.5M12 16.5V18"/>', fields:FINANCES },
   { id:'louange',   label:'Louange',                 icon:'<path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/>', fields:LOUANGE },
-  { id:'bible',     label:'Lecture de la Bible',     icon:'<path d="M12 6c-2-1.5-5-2-8-2v14c3 0 6 .5 8 2 2-1.5 5-2 8-2V4c-3 0-6 .5-8 2zM12 6v14"/>', fields:[] },
-  { id:'litterature', label:'Littérature chrétienne',icon:'<path d="M5 4h4v16H5zM11 4h4v16h-4zM17.5 5l3.5 1-3.5 14-3.5-1z"/>', fields:[] },
+  { id:'bible',     label:'Lecture de la Bible',     icon:'<path d="M12 6c-2-1.5-5-2-8-2v14c3 0 6 .5 8 2 2-1.5 5-2 8-2V4c-3 0-6 .5-8 2zM12 6v14"/>', fields:BIBLE },
+  { id:'litterature', label:'Littérature chrétienne',icon:'<path d="M4 5.5C4 4.7 4.7 4 5.5 4H10a2 2 0 012 2 2 2 0 012-2h4.5c.8 0 1.5.7 1.5 1.5v13c0 .8-.7 1.5-1.5 1.5H14a2 2 0 00-2 2 2 2 0 00-2-2H5.5A1.5 1.5 0 014 18.5v-13zM12 6v14"/>', fields:LITTERATURE },
   { id:'evangelisation', label:'Évangélisation',     icon:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/>', fields:EVANGELISATION },
-  { id:'service',   label:'Service',                 icon:'<path d="M12 20s-8-4.7-8-10.5A4.5 4.5 0 0112 7a4.5 4.5 0 018 2.5C20 15.3 12 20 12 20z"/>', fields:[] },
-  { id:'bertoua',   label:'Message de Bertoua',      icon:'<path d="M12 3v18M6 9h12"/>', fields:[] },
+  { id:'service',   label:'Service',                 icon:'<path d="M12 20s-8-4.7-8-10.5A4.5 4.5 0 0112 7a4.5 4.5 0 018 2.5C20 15.3 12 20 12 20z"/>', fields:SERVICE },
+  { id:'bertoua',   label:'Message de Bertoua',      icon:'<path d="M12 3v18M6 9h12"/>', fields:BERTOUA },
 ];
 
 const ACCOUNT_FIELDS = [
@@ -92,20 +188,21 @@ const api = {
 };
 
 /* ---------- Composants ---------- */
-const hero = (title, sub, extra='', cls='', img='') => `<header class="hero ${cls}">${img ? `<img class="bg" src="${img}" alt="" onerror="this.remove()">` : ''}<div class="bar">${LOGO}${extra}</div><h1>${title}</h1>${sub?`<p>${sub}</p>`:''}</header>`;
+const hero = (title, sub, extra='', cls='', img='') => `<header class="hero ${cls}">${img ? `<img class="bg" src="${img}" alt="" onerror="this.remove()">` : ''}<div class="bar">${LOGO}<div class="bar-right">${extra}<button id="installBtn" class="pill icon-only" hidden aria-label="Installer l'application">${DL_ICON}</button></div></div><h1>${title}</h1>${sub?`<p>${sub}</p>`:''}</header>`;
 const toast = m => { const t = $('#toast'); t.textContent = m; t.classList.add('on'); setTimeout(() => t.classList.remove('on'), 2200); };
 
 function field(f) {
   const id = 'f_'+f.name, req = f.required ? 'required' : '';
+  const wrapAttrs = f.showIf ? ` class="cond" data-show-if="${f.showIf.name}" data-show-val="${esc(f.showIf.equals)}" hidden` : '';
   if (f.type === 'radio' || f.type === 'checkbox')
-    return `<fieldset><legend>${esc(f.label)}</legend>${f.options.map(o => `<label class="opt"><input type="${f.type}" name="${f.name}" value="${esc(o)}" ${f.type==='radio'?req:''}><span>${esc(o)}</span></label>`).join('')}</fieldset>`;
+    return `<fieldset${wrapAttrs}><legend>${esc(f.label)}</legend>${f.options.map(o => `<label class="opt"><input type="${f.type}" name="${f.name}" value="${esc(o)}" ${f.type==='radio'?req:''}><span>${esc(o)}</span></label>`).join('')}</fieldset>`;
   if (f.type === 'checkcount')
     return `<fieldset><legend>${esc(f.label)}</legend>${f.options.map((o,i) => `<div class="opt"><input type="checkbox" id="${id}_${i}" name="${f.name}" value="${esc(o.label)}"><label for="${id}_${i}">${esc(o.label)}</label>${o.count ? `<input class="nb" type="number" min="1" inputmode="numeric" name="${f.name}_${o.key}" placeholder="Nombre" aria-label="Nombre — ${esc(o.label)}" disabled>` : ''}</div>`).join('')}</fieldset>`;
   let inp;
   if (f.type === 'textarea') inp = `<textarea id="${id}" name="${f.name}" ${req}></textarea>`;
   else if (f.type === 'select') inp = `<select id="${id}" name="${f.name}" ${req}><option value="">Choisir…</option>${f.options.map(o => `<option>${esc(o)}</option>`).join('')}</select>`;
   else inp = `<input id="${id}" name="${f.name}" type="${f.type||'text'}" ${f.min?`minlength="${f.min}"`:''} ${f.attrs ?? (f.type==='number' ? 'min="0" inputmode="numeric"' : '')} ${f.autocomplete?`autocomplete="${f.autocomplete}"`:''} ${req}>`;
-  return `<div class="fld"><label for="${id}">${esc(f.label)}</label>${f.unit ? `<div class="wrap">${inp}<span class="unit">${esc(f.unit)}</span></div>` : inp}</div>`;
+  return `<div class="fld"${wrapAttrs}><label for="${id}">${esc(f.label)}</label>${f.hint ? `<small>${esc(f.hint)}</small>` : ''}${f.unit ? `<div class="wrap">${inp}<span class="unit">${esc(f.unit)}</span></div>` : inp}</div>`;
 }
 const formData = form => { const fd = new FormData(form), o = {}; for (const k of new Set(fd.keys())) { const a = fd.getAll(k); o[k] = a.length > 1 ? a : a[0]; } return o; };
 
@@ -125,17 +222,17 @@ function viewAuth(mode) {
 }
 
 function viewHome(u) {
-  $('#app').innerHTML = `${hero('ZTF Imitators', 'Bienvenue, '+esc(u.nom.split(' ')[0]) + '<p class="hero-subtitle">Veuillez sélectionner un domaine pour rendre compte</p>', '<a class="pill" href="#/profil">Mon compte</a>')}
-  <main>
-    <h2>Domaines d'imitation</h2>
-    <ul class="grid">${DOMAINS.map((d, i) => `<li style="--i:${i}"><a class="tile" href="#/d/${d.id}"><img class="bg" src="img/${d.id}.jpg" alt="" loading="lazy" onload="this.parentNode.classList.add('has-img')" onerror="this.remove()">${ic(d.icon)}<span>${d.label}</span></a></li>`).join('')}</ul>
-  </main>`;
+  $('#app').innerHTML = `${hero('ZTF Imitators', 'Bienvenue, '+esc(u.nom.split(' ')[0])+' !' + '<p class="hero-subtitle">Veuillez sélectionner un domaine pour rendre compte</p>', '<a class="pill" href="#/profil">Mon compte</a>')}
+  <main><h2>Domaines d'imitation</h2><ul class="grid">${DOMAINS.map((d, i) => `<li style="--i:${i}"><a class="tile" href="#/d/${d.id}"><img class="bg" src="img/${d.id}.jpg" alt="" loading="lazy" onload="this.parentNode.classList.add('has-img')" onerror="this.remove()">${ic(d.icon)}<span>${d.label}</span></a></li>`).join('')}</ul></main>`;
 }
 
+const ZACH_QUESTION = { name:'question_zach', label:"Avez-vous une question par rapport à l'imitation du frère Zach dans ce domaine ?", type:'textarea' };
+
 function viewForm(d) {
-  const has = d.fields.length;
+  const fields = d.fields.length ? [...d.fields, ZACH_QUESTION] : [];
+  const has = fields.length;
   $('#app').innerHTML = `${hero(d.label,'','<a class="back" href="#/">← Retour</a>','compact',`img/${d.id}.jpg`)}
-  <main>${has ? `<form id="f">${d.fields.map(field).join('')}<button class="btn">Enregistrer</button></form>`
+  <main>${has ? `<form id="f">${fields.map(field).join('')}<button class="btn">Enregistrer</button></form>`
     : `<div class="empty">${ic(d.icon)}<p>Le questionnaire de ce domaine sera bientôt disponible.</p></div>`}</main>`;
   if (has) $('#f').onsubmit = async e => { e.preventDefault(); await api.submit(d.id, formData(e.target)); toast('Réponses enregistrées'); location.hash = '#/'; };
 }
@@ -150,15 +247,29 @@ function viewProfile(u) {
 /* ---------- Routeur ---------- */
 function route() {
   const u = api.me(), h = location.hash.slice(2).split('/');
-  if (!u) return viewAuth(h[0] === 'connexion' ? 'login' : 'register');
-  if (h[0] === 'd') { const d = DOMAINS.find(x => x.id === h[1]); if (d) return viewForm(d); }
-  if (h[0] === 'profil') return viewProfile(u);
-  viewHome(u);
+  const d = h[0] === 'd' ? DOMAINS.find(x => x.id === h[1]) : null;
+  if (!u) viewAuth(h[0] === 'connexion' ? 'login' : 'register');
+  else if (d) viewForm(d);
+  else if (h[0] === 'profil') viewProfile(u);
+  else viewHome(u);
+  updateInstallUI();
 }
 document.addEventListener('change', e => {
-  if (!e.target.matches('.opt input[type=checkbox]')) return;
-  const n = e.target.closest('.opt').querySelector('.nb');
-  if (n) { n.disabled = !e.target.checked; n.required = e.target.checked; if (e.target.checked) n.focus(); }
+  if (e.target.matches('.opt input[type=checkbox]')) {
+    const n = e.target.closest('.opt').querySelector('.nb');
+    if (n) { n.disabled = !e.target.checked; n.required = e.target.checked; if (e.target.checked) n.focus(); }
+  }
+  if (e.target.matches('form [name]')) {
+    const form = e.target.form; if (!form) return;
+    form.querySelectorAll('.cond[data-show-if]').forEach(box => {
+      const show = box.dataset.showIf === e.target.name && e.target.value === box.dataset.showVal && e.target.checked !== false;
+      if (box.dataset.showIf === e.target.name) {
+        const on = [...form.querySelectorAll(`[name="${box.dataset.showIf}"]`)].find(i => i.checked)?.value === box.dataset.showVal;
+        box.hidden = !on;
+        box.querySelectorAll('input,textarea,select').forEach(i => { if (i.dataset.wasRequired === undefined) i.dataset.wasRequired = i.required ? '1' : '0'; i.required = on && i.dataset.wasRequired === '1'; if (!on) i.value = i.type === 'radio' || i.type === 'checkbox' ? (i.checked = false) : ''; });
+      }
+    });
+  }
 });
 addEventListener('hashchange', route);
 route();
