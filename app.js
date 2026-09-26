@@ -155,35 +155,50 @@ const ACCOUNT_FIELDS = [
   { name:'password', label:'Mot de passe', type:'password', required:true, min:6, autocomplete:'new-password' },
 ];
 
-/* ---------- Données (localStorage pour l'instant) ----------
-   Pour passer à un vrai backend, remplacer le contenu de `api` par des fetch(). */
-const store = {
-  get:(k,d) => { try { return JSON.parse(localStorage.getItem('ztf:'+k)) ?? d } catch { return d } },
-  set:(k,v) => localStorage.setItem('ztf:'+k, JSON.stringify(v)),
+/* ---------- Backend Supabase (comptes + réponses centralisés) ---------- */
+const SUPABASE_URL = 'https://nmhgtwfupjnzpiiwavjh.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5taGd0d2Z1cGpuenBpaXdhdmpoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAzNzE2MzMsImV4cCI6MjEwNTk0NzYzM30.4uLSfrNM3V57tnmUi6LrUQX0c7wGSicbhHsmXiQ7CPA';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+let currentUser = null; // profil (table "profiles") de la personne connectée, mis en cache le temps de la session
+
+const authErrorFr = err => {
+  const m = (err && err.message || '').toLowerCase();
+  if (m.includes('already registered') || m.includes('already exists') || m.includes('already been registered')) return 'Un compte existe déjà avec cet email.';
+  if (m.includes('invalid login credentials')) return 'Email ou mot de passe incorrect.';
+  if (m.includes('password')) return 'Le mot de passe doit contenir au moins 6 caractères.';
+  return (err && err.message) || 'Une erreur est survenue, réessayez.';
 };
-/* crypto.randomUUID et crypto.subtle n'existent qu'en HTTPS ou sur localhost : on prévoit un repli pour les tests en HTTP */
-const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
-const sha = async s => {
-  if (!(crypto.subtle && crypto.subtle.digest)) { let h = 5381; for (const c of s) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; return 'w' + h.toString(16); }
-  return [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)))].map(x => x.toString(16).padStart(2,'0')).join('');
-};
+
 const api = {
-  me: () => store.get('users',[]).find(u => u.id === store.get('session')),
-  async register({ password, ...p }) {
-    const us = store.get('users',[]);
-    if (us.some(u => u.email.toLowerCase() === p.email.toLowerCase())) throw Error('Un compte existe déjà avec cet email.');
-    const u = { id:uid(), ...p, hash:await sha(password), created:new Date().toISOString() };
-    store.set('users',[...us,u]); store.set('session',u.id); return u;
+  async me() {
+    if (currentUser) return currentUser;
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) return null;
+    const { data, error } = await sb.from('profiles').select('*').eq('id', session.user.id).single();
+    if (error) return null;
+    return currentUser = data;
   },
-  async login(email, pw) {
-    const h = await sha(pw);
-    const u = store.get('users',[]).find(u => u.email.toLowerCase() === email.toLowerCase() && u.hash === h);
-    if (!u) throw Error('Email ou mot de passe incorrect.');
-    store.set('session',u.id); return u;
+  async register({ password, email, ...meta }) {
+    const { data, error } = await sb.auth.signUp({ email, password, options: { data: meta } });
+    if (error) throw Error(authErrorFr(error));
+    if (!data.session) throw Error("Compte créé. Vérifiez votre boîte mail pour confirmer votre adresse, puis connectez-vous.");
+    const { data: profile, error: e2 } = await sb.from('profiles').select('*').eq('id', data.user.id).single();
+    if (e2) throw Error("Compte créé, mais le profil n'a pas pu être chargé. Réessayez de vous connecter.");
+    return currentUser = profile;
   },
-  logout: () => localStorage.removeItem('ztf:session'),
+  async login(email, password) {
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) throw Error(authErrorFr(error));
+    const { data: profile, error: e2 } = await sb.from('profiles').select('*').eq('id', data.user.id).single();
+    if (e2) throw Error('Impossible de récupérer votre profil.');
+    return currentUser = profile;
+  },
+  async logout() { await sb.auth.signOut(); currentUser = null; },
   async submit(domain, data) {
-    store.set('submissions',[...store.get('submissions',[]), { id:uid(), userId:store.get('session'), domain, data, date:new Date().toISOString() }]);
+    const user = await api.me();
+    const { error } = await sb.from('submissions').insert({ user_id: user.id, domain, data });
+    if (error) throw Error("L'enregistrement a échoué : " + error.message);
   },
 };
 
@@ -216,13 +231,13 @@ function viewAuth(mode) {
   <form id="auth"><p class="err" role="alert"></p>${fields.map(field).join('')}<button class="btn">${reg?'Créer mon compte':'Se connecter'}</button></form></main>`;
   $('#auth').onsubmit = async e => {
     e.preventDefault(); const b = e.target.querySelector('.btn'); b.disabled = true;
-    try { const d = formData(e.target); reg ? await api.register(d) : await api.login(d.email, d.password); location.hash = '#/'; route(); }
+    try { const d = formData(e.target); reg ? await api.register(d) : await api.login(d.email, d.password); location.hash = '#/'; await route(); }
     catch (x) { e.target.querySelector('.err').textContent = x.message; b.disabled = false; }
   };
 }
 
 function viewHome(u) {
-  $('#app').innerHTML = `${hero('ZTF Imitators', 'Bienvenue, '+esc(u.nom.split(' ')[0])+' !' + '<p class="hero-subtitle">Veuillez sélectionner un domaine pour rendre compte</p>', '<a class="pill" href="#/profil">Mon compte</a>')}
+  $('#app').innerHTML = `${hero('ZTF Imitators', 'Bienvenue, '+esc(u.nom.split(' ')[0]), '<a class="pill" href="#/profil">Mon compte</a>')}
   <main><h2>Domaines d'imitation</h2><ul class="grid">${DOMAINS.map((d, i) => `<li style="--i:${i}"><a class="tile" href="#/d/${d.id}"><img class="bg" src="img/${d.id}.jpg" alt="" loading="lazy" onload="this.parentNode.classList.add('has-img')" onerror="this.remove()">${ic(d.icon)}<span>${d.label}</span></a></li>`).join('')}</ul></main>`;
 }
 
@@ -234,19 +249,23 @@ function viewForm(d) {
   $('#app').innerHTML = `${hero(d.label,'','<a class="back" href="#/">← Retour</a>','compact',`img/${d.id}.jpg`)}
   <main>${has ? `<form id="f">${fields.map(field).join('')}<button class="btn">Enregistrer</button></form>`
     : `<div class="empty">${ic(d.icon)}<p>Le questionnaire de ce domaine sera bientôt disponible.</p></div>`}</main>`;
-  if (has) $('#f').onsubmit = async e => { e.preventDefault(); await api.submit(d.id, formData(e.target)); toast('Réponses enregistrées'); location.hash = '#/'; };
+  if (has) $('#f').onsubmit = async e => {
+    e.preventDefault(); const btn = e.target.querySelector('.btn'); btn.disabled = true;
+    try { await api.submit(d.id, formData(e.target)); toast('Réponses enregistrées'); location.hash = '#/'; await route(); }
+    catch (x) { toast(x.message); btn.disabled = false; }
+  };
 }
 
 function viewProfile(u) {
   const rows = ACCOUNT_FIELDS.filter(f => f.name !== 'password').map(f => `<li><b>${esc(f.label)}</b>${esc(u[f.name]) || '—'}</li>`).join('');
   $('#app').innerHTML = `${hero('Mon compte','','<a class="back" href="#/">← Retour</a>','compact')}
   <main><ul class="info">${rows}</ul><button class="btn" id="out">Se déconnecter</button></main>`;
-  $('#out').onclick = () => { api.logout(); location.hash = '#/connexion'; route(); };
+  $('#out').onclick = async () => { await api.logout(); location.hash = '#/connexion'; await route(); };
 }
 
 /* ---------- Routeur ---------- */
-function route() {
-  const u = api.me(), h = location.hash.slice(2).split('/');
+async function route() {
+  const u = await api.me(), h = location.hash.slice(2).split('/');
   const d = h[0] === 'd' ? DOMAINS.find(x => x.id === h[1]) : null;
   if (!u) viewAuth(h[0] === 'connexion' ? 'login' : 'register');
   else if (d) viewForm(d);
@@ -272,4 +291,5 @@ document.addEventListener('change', e => {
   }
 });
 addEventListener('hashchange', route);
+$('#app').innerHTML = hero('ZTF Imitators', 'Chargement…');
 route();
