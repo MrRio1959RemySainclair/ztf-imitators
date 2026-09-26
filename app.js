@@ -237,7 +237,8 @@ function viewAuth(mode) {
 }
 
 function viewHome(u) {
-  $('#app').innerHTML = `${hero('ZTF Imitators', 'Bienvenue, '+esc(u.nom.split(' ')[0]), '<a class="pill" href="#/profil">Mon compte</a>')}
+  const adminLink = u.is_admin ? '<a class="pill" href="#/admin">Dashboard admin</a>' : '';
+  $('#app').innerHTML = `${hero('ZTF Imitators', 'Bienvenue, '+esc(u.nom.split(' ')[0]) + '!', adminLink + '<a class="pill" href="#/profil">Mon compte</a>')}
   <main><h2>Domaines d'imitation</h2><ul class="grid">${DOMAINS.map((d, i) => `<li style="--i:${i}"><a class="tile" href="#/d/${d.id}"><img class="bg" src="img/${d.id}.jpg" alt="" loading="lazy" onload="this.parentNode.classList.add('has-img')" onerror="this.remove()">${ic(d.icon)}<span>${d.label}</span></a></li>`).join('')}</ul></main>`;
 }
 
@@ -256,6 +257,82 @@ function viewForm(d) {
   };
 }
 
+/* ---------- Dashboard admin ---------- */
+let charts = [];
+const clearCharts = () => { charts.forEach(c => c.destroy()); charts = []; };
+function statBar(canvasId, labels, values, label) {
+  const ctx = document.getElementById(canvasId); if (!ctx) return;
+  charts.push(new Chart(ctx, {
+    type:'bar',
+    data:{ labels, datasets:[{ label, data:values, backgroundColor:'#4db3f2', borderRadius:6 }] },
+    options:{ responsive:true, plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true, ticks:{ precision:0 } } } },
+  }));
+}
+async function fetchOverview() {
+  const [{ count:totalUsers }, { data:subs, error }] = await Promise.all([
+    sb.from('profiles').select('id', { count:'exact', head:true }),
+    sb.from('submissions').select('domain'),
+  ]);
+  if (error) throw Error(error.message);
+  const counts = Object.fromEntries(DOMAINS.map(d => [d.id, 0]));
+  (subs || []).forEach(r => { if (counts[r.domain] !== undefined) counts[r.domain]++; });
+  return { totalUsers:totalUsers || 0, totalSubs:(subs || []).length, counts };
+}
+async function fetchDomainSubs(domainId) {
+  const { data, error } = await sb.from('submissions').select('data,created_at').eq('domain', domainId).order('created_at', { ascending:false });
+  if (error) throw Error(error.message);
+  return data || [];
+}
+async function viewAdmin(u) {
+  const h = location.hash.slice(2).split('/'); // ['admin', domainId?]
+  const domain = h[1] ? DOMAINS.find(x => x.id === h[1]) : null;
+  $('#app').innerHTML = `${hero('Dashboard admin','','<a class="back" href="#/">← Retour</a>','compact')}
+  <main>
+    <nav class="tabs"><a href="#/admin" class="${!domain?'on':''}">Vue d'ensemble</a></nav>
+    <ul class="grid admin-domains">${DOMAINS.map(d => `<li><a class="tile small ${domain?.id===d.id?'sel':''}" href="#/admin/${d.id}">${ic(d.icon)}<span>${d.label}</span></a></li>`).join('')}</ul>
+    <div id="adminBody"><p class="hint">Chargement…</p></div>
+  </main>`;
+  const body = $('#adminBody');
+  clearCharts();
+  try {
+    if (!domain) {
+      const { totalUsers, totalSubs, counts } = await fetchOverview();
+      body.innerHTML = `<ul class="info stats"><li><b>Imitateurs inscrits</b>${totalUsers}</li><li><b>Réponses reçues, tous domaines</b>${totalSubs}</li></ul>
+      <h2>Réponses par domaine</h2><div class="chart-wrap"><canvas id="chartOverview"></canvas></div>`;
+      statBar('chartOverview', DOMAINS.map(d => d.label), DOMAINS.map(d => counts[d.id] || 0), 'Réponses');
+      return;
+    }
+    if (!domain.fields.length) { body.innerHTML = `<div class="empty">${ic(domain.icon)}<p>Le formulaire de ce domaine n'est pas encore disponible.</p></div>`; return; }
+    const rows = await fetchDomainSubs(domain.id);
+    if (!rows.length) { body.innerHTML = `<div class="empty">${ic(domain.icon)}<p>Aucune réponse reçue pour ${esc(domain.label)} pour l'instant.</p></div>`; return; }
+    const choiceFields = domain.fields.filter(f => (f.type === 'radio' || f.type === 'checkbox') && f.options);
+    const numberFields = domain.fields.filter(f => f.type === 'number');
+    const textFields = domain.fields.filter(f => f.type === 'textarea');
+
+    let html = `<p class="hint">${rows.length} réponse${rows.length > 1 ? 's' : ''} reçue${rows.length > 1 ? 's' : ''} pour ${esc(domain.label)}.</p>`;
+    if (numberFields.length) html += `<h2>Chiffres clés</h2><ul class="info stats">${numberFields.map(f => {
+      const vals = rows.map(r => Number(r.data[f.name])).filter(v => Number.isFinite(v));
+      const sum = vals.reduce((a,b) => a+b, 0), avg = vals.length ? (sum/vals.length).toFixed(1) : '—';
+      return `<li><b>${esc(f.label)}</b>Total ${sum} · Moyenne ${avg} (${vals.length} réponse${vals.length > 1 ? 's' : ''})</li>`;
+    }).join('')}</ul>`;
+    if (choiceFields.length) html += `<h2>Répartition des choix</h2>`;
+    choiceFields.forEach((f,i) => html += `<p class="chart-title">${esc(f.label)}</p><div class="chart-wrap"><canvas id="chartField${i}"></canvas></div>`);
+    if (textFields.length) {
+      const recents = rows.filter(r => textFields.some(f => r.data[f.name])).slice(0,5);
+      html += `<h2>Derniers témoignages</h2><ul class="info">${recents.length ? recents.map(r => {
+        const f = textFields.find(f => r.data[f.name]); const v = String(r.data[f.name]);
+        return `<li><b>${esc(f.label)}</b>${esc(v.slice(0,220))}${v.length > 220 ? '…' : ''}</li>`;
+      }).join('') : '<li>Aucun témoignage partagé pour l\'instant.</li>'}</ul>`;
+    }
+    body.innerHTML = html;
+    choiceFields.forEach((f,i) => {
+      const counts = Object.fromEntries(f.options.map(o => [o,0]));
+      rows.forEach(r => { const v = r.data[f.name]; (Array.isArray(v) ? v : [v]).forEach(x => { if (counts[x] !== undefined) counts[x]++; }); });
+      statBar(`chartField${i}`, Object.keys(counts), Object.values(counts), f.label);
+    });
+  } catch (x) { body.innerHTML = `<p class="err">Erreur de chargement : ${esc(x.message)}</p>`; }
+}
+
 function viewProfile(u) {
   const rows = ACCOUNT_FIELDS.filter(f => f.name !== 'password').map(f => `<li><b>${esc(f.label)}</b>${esc(u[f.name]) || '—'}</li>`).join('');
   $('#app').innerHTML = `${hero('Mon compte','','<a class="back" href="#/">← Retour</a>','compact')}
@@ -268,6 +345,7 @@ async function route() {
   const u = await api.me(), h = location.hash.slice(2).split('/');
   const d = h[0] === 'd' ? DOMAINS.find(x => x.id === h[1]) : null;
   if (!u) viewAuth(h[0] === 'connexion' ? 'login' : 'register');
+  else if (h[0] === 'admin' && u.is_admin) await viewAdmin(u);
   else if (d) viewForm(d);
   else if (h[0] === 'profil') viewProfile(u);
   else viewHome(u);
