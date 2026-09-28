@@ -81,6 +81,9 @@ input:not([type=radio]):not([type=checkbox]):focus,select:focus,textarea:focus{o
 .opt:hover{border-color:var(--sky-d);transform:translateX(3px)}
 .wrap{display:flex;align-items:center;gap:10px}
 .wrap input{flex:1;min-width:0}
+.time-split{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.time-box{display:flex;flex-direction:column;gap:6px;font-size:.85rem;font-weight:600;color:var(--sky-d)}
+.time-box input{width:100%}
 .unit{color:var(--sky-d);font-weight:600}
 @keyframes rise{from{opacity:0;transform:translateY(18px) scale(.95)}}
 @keyframes fade{from{opacity:0;transform:translateY(8px)}}

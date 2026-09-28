@@ -57,6 +57,7 @@ const JEUNE = [
   N('engagement_jours', 'Combien de jours de jeûne vous étiez-vous engagé(e) à faire ce mois-ci ?', 'How many days of fasting did you commit to this month?', {fr:'jours',en:'days'}),
   N('jours_realises', 'Combien de jours avez-vous effectivement jeûnés ?', 'How many days did you actually fast?', {fr:'jours',en:'days'}),
   { name:'regularite', label:{fr:'Avez-vous jeûné aussi régulièrement que vous vous étiez engagé(e) à le faire ?',en:'Did you fast as regularly as you had committed to?'}, type:'radio', required:true, options:REALISATION4 },
+  N('wednesday_fasts', 'Combien de jeûnes le mercredi avez-vous effectués pour votre nation ?', 'How many wednesday fasts did you carry out for your nation?', {fr:'jeûnes',en:'fasts'}),
   { name:'difficultes', label:{fr:'Quelles difficultés avez-vous rencontrées dans votre jeûne ?',en:'What difficulties did you encounter in your fasting?'}, type:'textarea' },
   { name:'enseignement', label:{fr:'Quel enseignement ou quelle bénédiction avez-vous tirés de ce jeûne ?',en:'What lesson or blessing did you draw from this fasting?'}, type:'textarea' },
   { name:'temoignage', label:{fr:'Quel témoignage souhaitez-vous partager concernant votre jeûne ?',en:'What testimony would you like to share about your fasting?'}, type:'textarea' },
@@ -66,11 +67,11 @@ const JEUNE = [
 
 const PRIERE = [
   { name:'mois', label:{fr:'Mois concerné',en:'Month concerned'}, type:'month', required:true },
-  { name:'temps_engage', label:{fr:'Combien de temps par jour vous étiez-vous engagé(e) à consacrer à la prière ?',en:'How much time per day did you commit to devote to prayer?'}, type:'radio', required:true, options:[
-    O('moins_15','Moins de 15 min','Less than 15 min'), O('15_30','15 à 30 min','15 to 30 min'), O('30_60','30 min à 1 heure','30 min to 1 hour'), O('plus_heure',"Plus d'une heure",'More than an hour') ] },
-  N('jours_pries', 'Combien de jours avez-vous prié durant ce mois ?', 'How many days did you pray during this month?', {fr:'jours',en:'days'}),
-  { name:'regularite', label:{fr:'Avez-vous prié aussi régulièrement que prévu ?',en:'Did you pray as regularly as planned?'}, type:'radio', required:true, options:QUOTIDIEN3 },
-  { name:'types_priere', label:{fr:'Quels types de prière avez-vous pratiqués ?',en:'What types of prayer did you practice?'}, type:'checkbox', options:[
+  { name:'temps_engage', label:{fr:'Combien de temps par jour vous étiez-vous engagé(e) à consacrer à la prière ?',en:'How much time per day did you commit to devote to prayer?'}, type:'split-time', required:true, hourName:'temps_engage', minuteName:'temps_engage_minutes', hoursLabel:{fr:'Heures',en:'Hours'}, minutesLabel:{fr:'Minutes',en:'Minutes'} },
+  { name:'retreat', label:{fr:'Combien de retraites de 15 minutes avez-vous effectuées ?',en:'How many 15-minute retreats did you carry out?'}, type:'number', required:true, unit:{fr:'retraites',en:'retreats'} }, 
+  { name:'prayer_topics', label:{fr:'Combien de sujets de prière avez-vous ecrit dans votre cahier de prière ?',en:'How many prayer topics did you write in your prayer book?'}, type:'number', required:true, unit:{fr:'sujets',en:'topics'} }, 
+  { name:'thanksgiving_topics', label:{fr:"Combien de sujets d'actions de grâces avez-vous ecrit dans votre cahier d'action de grâces ?",en:'How many thanksgiving topics did you write in your thanksgiving book?'}, type:'number', required:true, unit:{fr:'sujets',en:'topics'} }, 
+  { name:'types_priere', label:{fr:'Comment avez-vous pratiqué la prière ce mois ?',en:'How did you pray this month ?'}, type:'checkbox', options:[
     O('personnelle','Prière personnelle','Personal prayer'), O('famille','Prière en famille','Family prayer'), O('intercession',"Prière d'intercession",'Intercessory prayer'),
     O('eglise_maison',"Prière avec l'église de maison",'Prayer with the house church'), O('jeune_priere','Jeûne et prière','Fasting and prayer'), O('autre','Autre','Other') ] },
   { name:'difficultes', label:{fr:'Quelles difficultés avez-vous rencontrées dans votre vie de prière ?',en:'What difficulties did you encounter in your prayer life?'}, type:'textarea' },
@@ -82,16 +83,12 @@ const PRIERE = [
 
 const RDQD = [
   { name:'mois', label:{fr:'Mois concerné',en:'Month concerned'}, type:'month', required:true },
-  N('engagement_rdqd', 'Combien de RDQD vous étiez-vous engagé(e) à faire ce mois-ci ?', 'How many RDQD did you commit to do this month?'),
-  N('realisees', 'Combien de RDQD avez-vous effectivement réalisées ?', 'How many RDQD did you actually complete?'),
-  { name:'regularite', label:{fr:'Avez-vous fait vos RDQD aussi régulièrement que prévu ?',en:'Did you do your RDQD as regularly as planned?'}, type:'radio', required:true, options:QUOTIDIEN3 },
-  { name:'support', label:{fr:'Quel support avez-vous utilisé pour vos RDQD ?',en:'What resource did you use for your RDQD?'}, type:'checkbox', options:[
-    O('guide','Guide de méditation','Meditation guide'), O('bible_seule','Bible seule','Bible alone'), O('application','Application mobile','Mobile app'), O('autre','Autre','Other') ] },
-  { name:'enseignement', label:{fr:'Quel enseignement principal avez-vous retenu de vos RDQD ?',en:'What main lesson did you take from your RDQD?'}, type:'textarea' },
+  N('engagement_rdqd', 'Combien de RDQD vous étiez-vous engagé(e) à faire ce mois-ci ?', 'How many DDEWG did you commit to do this month?'),
+  N('realisees', 'Combien de RDQD avez-vous effectivement eu ?', 'How many DDEWG did you have actually ?'),
   { name:'difficultes', label:{fr:'Quelles difficultés avez-vous rencontrées ?',en:'What difficulties did you encounter?'}, type:'textarea' },
-  { name:'temoignage', label:{fr:'Quel témoignage souhaitez-vous partager ?',en:'What testimony would you like to share?'}, type:'textarea' },
-  N('encourages', 'Combien de personnes comptez-vous encourager à pratiquer les RDQD le mois prochain ?', 'How many people do you plan to encourage to practice RDQD next month?', {fr:'personnes',en:'people'}),
-  { name:'engagement_prochain', label:{fr:'Maintenez-vous votre engagement de RDQD pour le mois prochain ?',en:'Are you keeping your RDQD commitment for next month?'}, type:'radio', required:true, options:YN },
+  { name:'temoignage', label:{fr:'Quel témoignage souhaitez-vous partager par rapport à vos RDQD ?',en:'What testimony would you like to share from your DDEWG?'}, type:'textarea' },
+  N('encourages', 'Combien de personnes comptez-vous encourager à pratiquer les RDQD le mois prochain ?', 'How many people do you plan to encourage to practice DDEWG next month?', {fr:'personnes',en:'people'}),
+  { name:'engagement_prochain', label:{fr:'Maintenez-vous votre engagement de RDQD pour le mois prochain ?',en:'Are you keeping your DDEWG commitment for next month?'}, type:'radio', required:true, options:YN },
 ];
 
 const FINANCES = [
@@ -200,7 +197,7 @@ const ZACH_QUESTION = { name:'question_zach', label:{fr:"Avez-vous une question 
 const DOMAINS = [
   { id:'jeune',     label:{fr:'Jeûne',en:'Fasting'},                   icon:'<circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="2.5"/><path d="M4 4l16 16"/>', fields:JEUNE },
   { id:'priere',    label:{fr:'Prière',en:'Prayer'},                   icon:'<path d="M12 4c-3 3-4 7-4 11l4 5 4-5c0-4-1-8-4-11zM12 4v16"/>', fields:PRIERE },
-  { id:'rdqd',      label:{fr:'RDQD / Méditation',en:'RDQD / Meditation'}, icon:'<path d="M3 18h18M6 18a6 6 0 0112 0M12 6V3M4.6 9.6L3 8M19.4 9.6L21 8"/>', fields:RDQD },
+  { id:'rdqd',      label:{fr:'RDQD (Rencontre Dynamique Quotidienne avec Dieu)',en:'DDEWG (Dynamic Daily Encounter with God)'}, icon:'<path d="M3 18h18M6 18a6 6 0 0112 0M12 6V3M4.6 9.6L3 8M19.4 9.6L21 8"/>', fields:RDQD },
   { id:'finances',  label:{fr:'Finances',en:'Finances'},               icon:'<circle cx="12" cy="12" r="9"/><path d="M9 9.5c0-1 1-2 3-2s3 1 3 2-1 1.6-3 2-3 1-3 2 1 2 3 2 3-1 3-2M12 6v1.5M12 16.5V18"/>', fields:FINANCES },
   { id:'louange',   label:{fr:'Louange',en:'Praise'},                  icon:'<path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/>', fields:LOUANGE },
   { id:'bible',     label:{fr:'Lecture de la Bible',en:'Bible reading'}, icon:'<path d="M12 6c-2-1.5-5-2-8-2v14c3 0 6 .5 8 2 2-1.5 5-2 8-2V4c-3 0-6 .5-8 2zM12 6v14"/>', fields:BIBLE },
@@ -282,6 +279,13 @@ function fieldValueDisplay(f, u) {
 function field(f) {
   const id = 'f_'+f.name, req = f.required ? 'required' : '';
   const wrapAttrs = f.showIf ? ` class="cond" data-show-if="${f.showIf.name}" data-show-val="${esc(f.showIf.equals)}" hidden` : '';
+  if (f.type === 'split-time') {
+    const hoursName = f.hourName || f.name;
+    const minutesName = f.minuteName || `${f.name}_minutes`;
+    const hoursLabel = T(f.hoursLabel || {fr:'Heures',en:'Hours'});
+    const minutesLabel = T(f.minutesLabel || {fr:'Minutes',en:'Minutes'});
+    return `<div class="fld"${wrapAttrs}><label>${esc(T(f.label))}</label><div class="time-split"><label class="time-box"><span>${hoursLabel}</span><input id="${id}_h" name="${hoursName}" type="number" min="0" max="24" inputmode="numeric" ${req}></label><label class="time-box"><span>${minutesLabel}</span><input id="${id}_m" name="${minutesName}" type="number" min="0" max="59" inputmode="numeric" ${req}></label></div></div>`;
+  }
   if (f.type === 'radio' || f.type === 'checkbox')
     return `<fieldset${wrapAttrs}><legend>${esc(T(f.label))}</legend>${f.options.map(o => `<label class="opt"><input type="${f.type}" name="${f.name}" value="${esc(o.value)}" ${f.type==='radio'?req:''}><span>${esc(T(o))}</span></label>`).join('')}</fieldset>`;
   if (f.type === 'checkcount')
