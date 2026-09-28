@@ -6,6 +6,8 @@ const LOGO = '<img class="badge" src="icons/badge-128.png" alt="ZTF Imitators" w
 const DL_ICON = ic('<path d="M12 3v12m0 0l-4.5-4.5M12 15l4.5-4.5M4.5 19h15"/>');
 const SUN_ICON = ic('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>');
 const MOON_ICON = ic('<path d="M20 14.5A8 8 0 019.5 4 8 8 0 1020 14.5z"/>');
+const ADMIN_ICON = ic('<path d="M4 18h16"/><path d="M7 18V9M12 18V5M17 18v-7"/>');
+const USER_ICON = ic('<circle cx="12" cy="8.3" r="3.5"/><path d="M5 19c1.4-2.8 4-4.2 7-4.2s5.6 1.4 7 4.2"/>');
 
 /* ---------- Langue & thème (choix de la personne, gardés sur cet appareil) ---------- */
 let LANG = localStorage.getItem('ztf:lang') || 'fr';
@@ -25,13 +27,13 @@ const QUOTIDIEN3 = [O('tous_les_jours','Oui, tous les jours','Yes, every day'), 
 
 /* ---------- Installation de la PWA ---------- */
 let deferredPrompt = null;
-const isStandalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) && !window.MSStream;
 addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredPrompt = e; updateInstallUI(); });
 addEventListener('appinstalled', () => { deferredPrompt = null; updateInstallUI(); });
 function updateInstallUI() {
   document.querySelectorAll('#installBtn').forEach(b => {
-    if (isStandalone) { b.hidden = true; return; }
+    if (isStandalone()) { b.hidden = true; return; }
     b.hidden = !(deferredPrompt || isIOS);
     b.dataset.mode = deferredPrompt ? 'prompt' : 'ios';
   });
@@ -309,7 +311,7 @@ function viewAuth(mode) {
 
 function viewHome(u) {
   const adminLink = u.is_admin ? `<a class="pill" href="#/admin">${T({fr:'Dashboard admin',en:'Admin dashboard'})}</a>` : '';
-  $('#app').innerHTML = `${hero('ZTF Imitators', T({fr:'Bienvenue, ',en:'Welcome, '})+esc(u.nom.split(' ')[0]), adminLink + `<a class="pill" href="#/profil">${T({fr:'Mon compte',en:'My account'})}</a>`)}
+  $('#app').innerHTML = `${hero('ZTF Imitators', T({fr:'Bienvenue, ',en:'Welcome, '})+esc(u.nom.split(' ')[0]), adminLink + `<a class="pill icon-only" href="#/profil" aria-label="${T({fr:'Mon compte',en:'My account'})}" title="${T({fr:'Mon compte',en:'My account'})}">${USER_ICON}</a>`)}
   <main><h2>${T({fr:"Domaines d'imitation",en:'Areas of imitation'})}</h2><ul class="grid">${DOMAINS.map((d, i) => `<li style="--i:${i}"><a class="tile" href="#/d/${d.id}"><img class="bg" src="img/${d.id}.jpg" alt="" loading="lazy" onload="this.parentNode.classList.add('has-img')" onerror="this.remove()">${ic(d.icon)}<span>${T(d.label)}</span></a></li>`).join('')}</ul></main>`;
 }
 
