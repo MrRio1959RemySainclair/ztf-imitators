@@ -27,15 +27,18 @@ const QUOTIDIEN3 = [O('tous_les_jours','Oui, tous les jours','Yes, every day'), 
 
 /* ---------- Installation de la PWA ---------- */
 let deferredPrompt = null;
+let installed = localStorage.getItem('ztf:installed') === '1';
 const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) && !window.MSStream;
 addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredPrompt = e; updateInstallUI(); });
-addEventListener('appinstalled', () => { deferredPrompt = null; updateInstallUI(); });
+addEventListener('appinstalled', () => { installed = true; localStorage.setItem('ztf:installed','1'); deferredPrompt = null; updateInstallUI(); });
+matchMedia('(display-mode: standalone)').addEventListener('change', updateInstallUI);
 function updateInstallUI() {
   document.querySelectorAll('#installBtn').forEach(b => {
-    if (isStandalone()) { b.hidden = true; return; }
-    b.hidden = !(deferredPrompt || isIOS);
-    b.dataset.mode = deferredPrompt ? 'prompt' : 'ios';
+    if (isStandalone() || installed) { b.hidden = true; return; }
+    if (deferredPrompt) { b.hidden = false; b.dataset.mode = 'prompt'; return; }
+    if (isIOS) { b.hidden = false; b.dataset.mode = 'ios'; return; }
+    b.hidden = true;
   });
 }
 document.addEventListener('click', async e => {
@@ -286,8 +289,11 @@ function field(f) {
     const minutesLabel = T(f.minutesLabel || {fr:'Minutes',en:'Minutes'});
     return `<div class="fld"${wrapAttrs}><label>${esc(T(f.label))}</label><div class="time-split"><label class="time-box"><span>${hoursLabel}</span><input id="${id}_h" name="${hoursName}" type="number" min="0" max="24" inputmode="numeric" ${req}></label><label class="time-box"><span>${minutesLabel}</span><input id="${id}_m" name="${minutesName}" type="number" min="0" max="59" inputmode="numeric" ${req}></label></div></div>`;
   }
-  if (f.type === 'radio' || f.type === 'checkbox')
-    return `<fieldset${wrapAttrs}><legend>${esc(T(f.label))}</legend>${f.options.map(o => `<label class="opt"><input type="${f.type}" name="${f.name}" value="${esc(o.value)}" ${f.type==='radio'?req:''}><span>${esc(T(o))}</span></label>`).join('')}</fieldset>`;
+  if (f.type === 'radio' || f.type === 'checkbox') {
+    const seg = f.type === 'radio' && f.options.length <= 2;
+    const attrs = seg ? (f.showIf ? wrapAttrs.replace('class="cond"', 'class="cond seg"') : ' class="seg"') : wrapAttrs;
+    return `<fieldset${attrs}><legend>${esc(T(f.label))}</legend><div class="opt-row">${f.options.map(o => `<label class="opt"><input type="${f.type}" name="${f.name}" value="${esc(o.value)}" ${f.type==='radio'?req:''}><span>${esc(T(o))}</span></label>`).join('')}</div></fieldset>`;
+  }
   if (f.type === 'checkcount')
     return `<fieldset${wrapAttrs}><legend>${esc(T(f.label))}</legend>${f.options.map((o,i) => `<div class="opt"><input type="checkbox" id="${id}_${i}" name="${f.name}" value="${esc(o.value)}"><label for="${id}_${i}">${esc(T(o))}</label>${o.count ? `<input class="nb" type="number" min="1" inputmode="numeric" name="${f.name}_${o.value}" placeholder="${esc(T({fr:'Nombre',en:'Number'}))}" aria-label="${esc(T({fr:'Nombre — ',en:'Number — '}) + T(o))}" disabled>` : ''}</div>`).join('')}</fieldset>`;
   let inp;
@@ -313,10 +319,25 @@ function viewAuth(mode) {
   };
 }
 
-function viewHome(u) {
-  const adminLink = u.is_admin ? `<a class="pill" href="#/admin">${T({fr:'Dashboard admin',en:'Admin dashboard'})}</a>` : '';
+async function fetchMonthProgress(userId) {
+  const start = new Date(); start.setDate(1); start.setHours(0,0,0,0);
+  const { data, error } = await sb.from('submissions').select('domain').eq('user_id', userId).gte('created_at', start.toISOString());
+  if (error) return new Set();
+  return new Set((data || []).map(r => r.domain));
+}
+async function viewHome(u) {
+  const adminLink = u.is_admin ? `<a class="pill icon-only" href="#/admin" aria-label="${T({fr:'Dashboard admin',en:'Admin dashboard'})}" title="${T({fr:'Dashboard admin',en:'Admin dashboard'})}">${ADMIN_ICON}</a>` : '';
   $('#app').innerHTML = `${hero('ZTF Imitators', T({fr:'Bienvenue, ',en:'Welcome, '})+esc(u.nom.split(' ')[0]), adminLink + `<a class="pill icon-only" href="#/profil" aria-label="${T({fr:'Mon compte',en:'My account'})}" title="${T({fr:'Mon compte',en:'My account'})}">${USER_ICON}</a>`)}
-  <main><h2>${T({fr:"Domaines d'imitation",en:'Areas of imitation'})}</h2><ul class="grid">${DOMAINS.map((d, i) => `<li style="--i:${i}"><a class="tile" href="#/d/${d.id}"><img class="bg" src="img/${d.id}.jpg" alt="" loading="lazy" onload="this.parentNode.classList.add('has-img')" onerror="this.remove()">${ic(d.icon)}<span>${T(d.label)}</span></a></li>`).join('')}</ul></main>`;
+  <main><div id="homeBody"><p class="hint">${T({fr:'Chargement…',en:'Loading…'})}</p></div></main>`;
+  const body = $('#homeBody');
+  const done = await fetchMonthProgress(u.id);
+  const n = done.size, total = DOMAINS.length;
+  body.innerHTML = `
+    <div class="progress-card">
+      <div class="progress-label">${T({fr:`${n} domaine(s)${n>1?'s':''} sur ${total} renseigné(s)${n>1?'s':''} ce mois-ci`,en:`${n} of ${total} domains submitted this month`})}</div>
+      <div class="prog"><i style="width:${total ? Math.round(n/total*100) : 0}%"></i></div>
+    </div>
+    <ul class="ledger">${DOMAINS.map((d,i) => `<li><a class="row" href="#/d/${d.id}"><span class="idx">${String(i+1).padStart(2,'0')}</span>${ic(d.icon)}<span class="row-name">${T(d.label)}</span><span class="mark ${done.has(d.id)?'done':'pending'}"></span></a></li>`).join('')}</ul>`;
 }
 
 function viewForm(d) {
@@ -339,72 +360,260 @@ function statBar(canvasId, labels, values, label) {
   const ctx = document.getElementById(canvasId); if (!ctx) return;
   charts.push(new Chart(ctx, {
     type:'bar',
-    data:{ labels, datasets:[{ label, data:values, backgroundColor:'#4db3f2', borderRadius:6 }] },
+    data:{ labels, datasets:[{ label, data:values, backgroundColor:'#1868C4', borderRadius:6 }] },
     options:{ responsive:true, plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true, ticks:{ precision:0 } } } },
   }));
 }
+const monthKey = iso => String(iso).slice(0,7);
+const monthLabel = key => { const [y,m] = key.split('-').map(Number); return new Date(y, m-1, 1).toLocaleDateString(LANG==='fr'?'fr-FR':'en-US', { month:'short', year:'2-digit' }); };
+function lastMonths(n) { const out=[], d=new Date(); d.setDate(1); for (let i=n-1;i>=0;i--) { const x=new Date(d.getFullYear(), d.getMonth()-i, 1); out.push(`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}`); } return out; }
+
 async function fetchOverview() {
-  const [{ count:totalUsers }, { data:subs, error }] = await Promise.all([
+  const [{ count:totalUsers }, { data:subs, error:e1 }, { data:profs, error:e2 }] = await Promise.all([
     sb.from('profiles').select('id', { count:'exact', head:true }),
-    sb.from('submissions').select('domain'),
+    sb.from('submissions').select('domain,user_id,created_at'),
+    sb.from('profiles').select('province,camp_niveau'),
   ]);
-  if (error) throw Error(error.message);
+  if (e1) throw Error(e1.message); if (e2) throw Error(e2.message);
   const counts = Object.fromEntries(DOMAINS.map(d => [d.id, 0]));
   (subs || []).forEach(r => { if (counts[r.domain] !== undefined) counts[r.domain]++; });
-  return { totalUsers:totalUsers || 0, totalSubs:(subs || []).length, counts };
+  const months = lastMonths(6);
+  const trend = Object.fromEntries(months.map(m => [m,0]));
+  (subs || []).forEach(r => { const k = monthKey(r.created_at); if (trend[k] !== undefined) trend[k]++; });
+  const thisMonth = monthKey(new Date().toISOString());
+  const activeThisMonth = new Set((subs || []).filter(r => monthKey(r.created_at) === thisMonth).map(r => r.user_id)).size;
+  const provinceCounts = {};
+  (profs || []).forEach(p => { const k = (p.province || '').trim() || '—'; provinceCounts[k] = (provinceCounts[k] || 0) + 1; });
+  const campCounts = { fondation:0, leadeur:0 };
+  (profs || []).forEach(p => { if (p.camp_niveau === 'fondation') campCounts.fondation++; else if (p.camp_niveau === 'leadeur') campCounts.leadeur++; });
+  return { totalUsers:totalUsers || 0, totalSubs:(subs || []).length, counts, months, trend, activeThisMonth, provinceCounts, campCounts };
 }
 async function fetchDomainSubs(domainId) {
-  const { data, error } = await sb.from('submissions').select('data,created_at').eq('domain', domainId).order('created_at', { ascending:false });
+  const { data, error } = await sb.from('submissions').select('data,created_at,profiles(nom)').eq('domain', domainId).order('created_at', { ascending:false });
   if (error) throw Error(error.message);
   return data || [];
 }
+
+const USER_GEO = {
+  cameroon:[6.37,12.35], cameroun:[6.37,12.35], france:[46.22,2.21], canada:[56.13,-106.35], usa:[37.09,-95.71], uk:[55.38,-3.44],
+  belgium:[50.5,4.47], switzerland:[46.82,8.23], germany:[51.17,10.45], italy:[41.87,12.57], spain:[40.46,-3.75], portugal:[39.4,-8.22],
+  senegal:[14.5,-14.45], ivory_coast:[7.54,-5.55], "cote_divoire":[7.54,-5.55], nigeria:[9.08,8.68], ghana:[7.95,-1.02],
+  gabon:[-0.8,11.61], congo:[-0.19,15.27], "democratic_republic_of_the_congo":[-2.88,23.66], rwanda:[-1.94,29.87], kenya:[-0.02,37.91],
+  benin:[9.31,2.31], togo:[8.62,0.82], burkina_faso:[12.24,-1.56], mali:[17.57,-3.99], mauritania:[21.01,-10.94],
+  morocco:[31.79,-7.09], algeria:[28.03,1.66], tunisia:[33.89,9.54], egypt:[26.82,30.8], south_africa:[-30.56,22.94],
+  australia:[-25.27,133.78], india:[20.59,78.96], china:[35.86,104.2], japan:[36.2,138.25], korea:[35.9,127.77], turkey:[38.96,35.24],
+  brazil:[-14.24,-51.93], argentina:[-38.42,-63.62], mexico:[23.63,-102.55], peru:[-9.19,-75.02], colombia:[4.57,-74.3],
+  cameroon:[6.37,12.35], "united_arab_emirates":[23.42,53.85], qatar:[25.35,51.18], saudi_arabia:[23.89,45.08], jordan:[31.24,36.51],
+  azerbaijan:[40.14,47.58], israel:[31.05,34.85], "united_states":[37.09,-95.71], "united_kingdom":[55.38,-3.44], "cote_d_ivoire":[7.54,-5.55]
+};
+
+function normalizeGeoKey(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return '';
+  return raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+}
+
+async function fetchUsersMapData() {
+  const [{ data: profiles, error: e1 }, { data: subs, error: e2 }] = await Promise.all([
+    sb.from('profiles').select('id,nom,province'),
+    sb.from('submissions').select('user_id')
+  ]);
+  if (e1) throw Error(e1.message);
+  if (e2) throw Error(e2.message);
+
+  const activeSet = new Set((subs || []).map(r => r.user_id).filter(Boolean));
+  const spread = {};
+  const mappedUsers = (profiles || []).map(p => {
+    const key = normalizeGeoKey(p.province);
+    const base = USER_GEO[key] || [0,0];
+    const slot = `${base[0].toFixed(2)}:${base[1].toFixed(2)}`;
+    const n = spread[slot] || 0;
+    spread[slot] = n + 1;
+    return {
+      id: p.id,
+      nom: p.nom || 'Utilisateur',
+      province: p.province || '—',
+      active: activeSet.has(p.id),
+      lat: base[0] + (n % 6) * 0.8,
+      lng: base[1] + (Math.floor(n / 6) % 6) * 0.8
+    };
+  });
+
+  return { users: mappedUsers, activeUsers: mappedUsers.filter(u => u.active), registeredCount: mappedUsers.length, activeCount: mappedUsers.filter(u => u.active).length };
+}
+
+function makeMapGLMarker(color) {
+  const el = document.createElement('div');
+  el.className = 'mapgl-marker';
+  el.style.setProperty('--marker-color', color);
+  el.innerHTML = '<span class="mapgl-marker-dot"></span>';
+  return el;
+}
+
+function renderAdminUsersMap(data) {
+  const mapRoot = document.getElementById('adminUsersMap');
+  if (!mapRoot || !window.maplibregl) return;
+
+  if (window.__ztfAdminMap) {
+    window.__ztfAdminMap.remove();
+    window.__ztfAdminMap = null;
+  }
+
+  const map = new window.maplibregl.Map({
+    container: mapRoot,
+    style: {
+      version: 8,
+      sources: {
+        esriImagery: {
+          type: 'raster',
+          tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+          tileSize: 256,
+          attribution: 'Imagery © Esri · OpenStreetMap contributors'
+        }
+      },
+      layers: [{ id: 'esri-imagery-layer', type: 'raster', source: 'esriImagery' }],
+      glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf'
+    },
+    center: [10, 15],
+    zoom: 2,
+    attributionControl: true,
+    preserveDrawingBuffer: true
+  });
+
+  window.__ztfAdminMap = map;
+
+  map.addControl(new window.maplibregl.NavigationControl({ showCompass: true }), 'top-right');
+  map.on('load', () => {
+    const points = data.users.filter(u => Number.isFinite(u.lat) && Number.isFinite(u.lng));
+    if (!points.length) return;
+
+    points.forEach(u => {
+      const color = u.active ? '#1aa260' : '#1868C4';
+      const marker = new window.maplibregl.Marker({
+        element: makeMapGLMarker(color),
+        anchor: 'center'
+      }).setLngLat([u.lng, u.lat]);
+
+      const popup = new window.maplibregl.Popup({ offset: 18 }).setHTML(
+        `<div class="mapgl-popup"><strong>${u.nom}</strong><br>${u.province}<br>${u.active ? 'Actif' : 'Inscrit'}</div>`
+      );
+      marker.setPopup(popup).addTo(map);
+    });
+
+    const bounds = points.reduce((acc, u) => {
+      acc[0] = Math.min(acc[0], u.lng);
+      acc[1] = Math.min(acc[1], u.lat);
+      acc[2] = Math.max(acc[2], u.lng);
+      acc[3] = Math.max(acc[3], u.lat);
+      return acc;
+    }, [Infinity, Infinity, -Infinity, -Infinity]);
+
+    if (Number.isFinite(bounds[0])) {
+      map.fitBounds([[bounds[1], bounds[0]], [bounds[3], bounds[2]]], { padding: 40, duration: 0 });
+    }
+  });
+}
+
 async function viewAdmin(u) {
   const h = location.hash.slice(2).split('/');
   const domain = h[1] ? DOMAINS.find(x => x.id === h[1]) : null;
   $('#app').innerHTML = `${hero(T({fr:'Dashboard admin',en:'Admin dashboard'}),'','<a class="back" href="#/">'+T({fr:'← Retour',en:'← Back'})+'</a>','compact')}
   <main>
-    <nav class="tabs"><a href="#/admin" class="${!domain?'on':''}">${T({fr:"Vue d'ensemble",en:'Overview'})}</a></nav>
-    <ul class="grid admin-domains">${DOMAINS.map(d => `<li><a class="tile small ${domain?.id===d.id?'sel':''}" href="#/admin/${d.id}">${ic(d.icon)}<span>${T(d.label)}</span></a></li>`).join('')}</ul>
+    <p class="print-only print-header"></p>
+    <div class="admin-toolbar print-hide">
+      <a href="#/admin" class="admin-overview-link ${!domain?'on':''}">${T({fr:"Vue d'ensemble",en:'Overview'})}</a>
+      <button class="export-btn" id="exportPdf" type="button">${T({fr:'⤓ Exporter en PDF',en:'⤓ Export as PDF'})}</button>
+    </div>
+    <ul class="admin-domains print-hide">${DOMAINS.map(d => `<li><a class="tile small ${domain?.id===d.id?'sel':''}" href="#/admin/${d.id}">${ic(d.icon)}<span>${T(d.label)}</span></a></li>`).join('')}</ul>
     <div id="adminBody"><p class="hint">${T({fr:'Chargement…',en:'Loading…'})}</p></div>
   </main>`;
+  $('#exportPdf').onclick = () => print();
   const body = $('#adminBody');
+  const printHeader = $('.print-header');
   clearCharts();
   try {
     if (!domain) {
-      const { totalUsers, totalSubs, counts } = await fetchOverview();
-      body.innerHTML = `<ul class="info stats"><li><b>${T({fr:'Imitateurs inscrits',en:'Registered imitators'})}</b>${totalUsers}</li><li><b>${T({fr:'Réponses reçues, tous domaines',en:'Responses received, all domains'})}</b>${totalSubs}</li></ul>
-      <h2>${T({fr:'Réponses par domaine',en:'Responses by domain'})}</h2><div class="chart-wrap"><canvas id="chartOverview"></canvas></div>`;
-      statBar('chartOverview', DOMAINS.map(d => T(d.label)), DOMAINS.map(d => counts[d.id] || 0), T({fr:'Réponses',en:'Responses'}));
+      const ov = await fetchOverview();
+      printHeader.textContent = T({fr:`ZTF Imitators — Vue d'ensemble — généré le ${new Date().toLocaleDateString('fr-FR')}`,en:`ZTF Imitators — Overview — generated on ${new Date().toLocaleDateString('en-US')}`});
+      const pct = ov.totalUsers ? Math.round(ov.activeThisMonth/ov.totalUsers*100) : 0;
+      const topProvinces = Object.entries(ov.provinceCounts).sort((a,b) => b[1]-a[1]).slice(0,6);
+      const usersMap = await fetchUsersMapData();
+      body.innerHTML = `
+        <ul class="info stats">
+          <li><b>${T({fr:'Imitateurs inscrits',en:'Registered imitators'})}</b>${ov.totalUsers}</li>
+          <li><b>${T({fr:'Réponses reçues, tous domaines',en:'Responses received, all domains'})}</b>${ov.totalSubs}</li>
+          <li><b>${T({fr:'Taux de participation ce mois',en:'Participation rate this month'})}</b>${T({fr:`${pct}\u00a0% (${ov.activeThisMonth} sur ${ov.totalUsers})`,en:`${pct}% (${ov.activeThisMonth} of ${ov.totalUsers})`})}</li>
+          <li><b>${T({fr:'Camps Koumé-Bertoua',en:'Koumé-Bertoua camps'})}</b>${T({fr:`Fondation ${ov.campCounts.fondation} · Leadeur ${ov.campCounts.leadeur}`,en:`Foundation ${ov.campCounts.fondation} · Leader ${ov.campCounts.leadeur}`})}</li>
+        </ul>
+        <h2>${T({fr:'Utilisateurs inscrits et actifs dans le monde',en:'Registered and active users worldwide'})}</h2>
+        <div class="admin-map-panel"><div id="adminUsersMap" class="admin-world-map"></div></div>
+        <h2>${T({fr:'Réponses par domaine',en:'Responses by domain'})}</h2><div class="chart-wrap"><canvas id="chartOverview"></canvas></div>
+        <h2>${T({fr:'Tendance — réponses par mois',en:'Trend — responses per month'})}</h2><div class="chart-wrap"><canvas id="chartTrend"></canvas></div>
+        ${topProvinces.length ? `<h2>${T({fr:'Provinces spirituelles / nations',en:'Spiritual provinces / nations'})}</h2><div class="chart-wrap"><canvas id="chartProvince"></canvas></div>` : ''}
+        <table class="print-only print-table"><thead><tr><th>${T({fr:'Domaine',en:'Domain'})}</th><th>${T({fr:'Réponses',en:'Responses'})}</th></tr></thead>
+        <tbody>${DOMAINS.map(d => `<tr><td>${esc(T(d.label))}</td><td>${ov.counts[d.id] || 0}</td></tr>`).join('')}</tbody></table>`;
+      renderAdminUsersMap(usersMap);
+      statBar('chartOverview', DOMAINS.map(d => T(d.label)), DOMAINS.map(d => ov.counts[d.id] || 0), T({fr:'Réponses',en:'Responses'}));
+      statBar('chartTrend', ov.months.map(monthLabel), ov.months.map(m => ov.trend[m] || 0), T({fr:'Réponses',en:'Responses'}));
+      if (topProvinces.length) statBar('chartProvince', topProvinces.map(p => p[0]), topProvinces.map(p => p[1]), T({fr:'Imitateurs',en:'Imitators'}));
       return;
     }
     if (!domain.fields.length) { body.innerHTML = `<div class="empty">${ic(domain.icon)}<p>${T({fr:"Le formulaire de ce domaine n'est pas encore disponible.",en:"This domain's form is not available yet."})}</p></div>`; return; }
     const rows = await fetchDomainSubs(domain.id);
     if (!rows.length) { body.innerHTML = `<div class="empty">${ic(domain.icon)}<p>${T({fr:`Aucune réponse reçue pour ${T(domain.label)} pour l'instant.`,en:`No responses received yet for ${T(domain.label)}.`})}</p></div>`; return; }
+    const months = [...new Set(rows.map(r => monthKey(r.created_at)))].sort().reverse();
     const choiceFields = domain.fields.filter(f => (f.type === 'radio' || f.type === 'checkbox') && f.options);
     const numberFields = domain.fields.filter(f => f.type === 'number');
     const textFields = domain.fields.filter(f => f.type === 'textarea');
+    const nameOf = r => (r.profiles && r.profiles.nom) || '—';
 
-    let html = `<p class="hint">${T({fr:`${rows.length} réponse${rows.length>1?'s':''} reçue${rows.length>1?'s':''} pour ${T(domain.label)}.`,en:`${rows.length} response${rows.length>1?'s':''} received for ${T(domain.label)}.`})}</p>`;
-    if (numberFields.length) html += `<h2>${T({fr:'Chiffres clés',en:'Key figures'})}</h2><ul class="info stats">${numberFields.map(f => {
-      const vals = rows.map(r => Number(r.data[f.name])).filter(v => Number.isFinite(v));
-      const sum = vals.reduce((a,b) => a+b, 0), avg = vals.length ? (sum/vals.length).toFixed(1) : '—';
-      return `<li><b>${esc(T(f.label))}</b>${T({fr:`Total ${sum} · Moyenne ${avg} (${vals.length} réponse${vals.length>1?'s':''})`,en:`Total ${sum} · Average ${avg} (${vals.length} response${vals.length>1?'s':''})`})}</li>`;
-    }).join('')}</ul>`;
-    if (choiceFields.length) html += `<h2>${T({fr:'Répartition des choix',en:'Breakdown of choices'})}</h2>`;
-    choiceFields.forEach((f,i) => html += `<p class="chart-title">${esc(T(f.label))}</p><div class="chart-wrap"><canvas id="chartField${i}"></canvas></div>`);
-    if (textFields.length) {
-      const recents = rows.filter(r => textFields.some(f => r.data[f.name])).slice(0,5);
-      html += `<h2>${T({fr:'Derniers témoignages',en:'Latest testimonies'})}</h2><ul class="info">${recents.length ? recents.map(r => {
-        const f = textFields.find(f => r.data[f.name]); const v = String(r.data[f.name]);
-        return `<li><b>${esc(T(f.label))}</b>${esc(v.slice(0,220))}${v.length > 220 ? '…' : ''}</li>`;
-      }).join('') : `<li>${T({fr:"Aucun témoignage partagé pour l'instant.",en:'No testimony shared yet.'})}</li>`}</ul>`;
-    }
-    body.innerHTML = html;
-    choiceFields.forEach((f,i) => {
-      const counts = Object.fromEntries(f.options.map(o => [o.value,0]));
-      rows.forEach(r => { const v = r.data[f.name]; (Array.isArray(v) ? v : [v]).forEach(x => { if (counts[x] !== undefined) counts[x]++; }); });
-      statBar(`chartField${i}`, f.options.map(o => T(o)), f.options.map(o => counts[o.value]), T(f.label));
-    });
+    const renderDomain = selectedMonth => {
+      clearCharts();
+      const filtered = selectedMonth ? rows.filter(r => monthKey(r.created_at) === selectedMonth) : rows;
+      const trendMonths = lastMonths(6);
+      const trend = Object.fromEntries(trendMonths.map(m => [m,0]));
+      rows.forEach(r => { const k = monthKey(r.created_at); if (trend[k] !== undefined) trend[k]++; });
+
+      printHeader.textContent = T({
+        fr:`ZTF Imitators — ${T(domain.label)} — ${selectedMonth?monthLabel(selectedMonth):'toutes périodes'} — généré le ${new Date().toLocaleDateString('fr-FR')}`,
+        en:`ZTF Imitators — ${T(domain.label)} — ${selectedMonth?monthLabel(selectedMonth):'all periods'} — generated on ${new Date().toLocaleDateString('en-US')}`,
+      });
+
+      let html = `<div class="admin-filter print-hide"><label for="monthFilter">${T({fr:'Mois',en:'Month'})}</label><select id="monthFilter"><option value="">${T({fr:'Tous les mois',en:'All months'})}</option>${months.map(m => `<option value="${m}" ${m===selectedMonth?'selected':''}>${monthLabel(m)}</option>`).join('')}</select></div>`;
+      html += `<p class="hint">${T({
+        fr:`${filtered.length} réponse${filtered.length>1?'s':''} ${selectedMonth?'pour '+monthLabel(selectedMonth):'reçue'+(filtered.length>1?'s':'')} pour ${T(domain.label)}.`,
+        en:`${filtered.length} response${filtered.length>1?'s':''} ${selectedMonth?'for '+monthLabel(selectedMonth):'received'} for ${T(domain.label)}.`,
+      })}</p>`;
+      if (numberFields.length) html += `<h2>${T({fr:'Chiffres clés',en:'Key figures'})}</h2><ul class="info stats">${numberFields.map(f => {
+        const vals = filtered.map(r => Number(r.data[f.name])).filter(v => Number.isFinite(v));
+        const sum = vals.reduce((a,b) => a+b, 0), avg = vals.length ? (sum/vals.length).toFixed(1) : '—';
+        return `<li><b>${esc(T(f.label))}</b>${T({fr:`Total ${sum} · Moyenne ${avg} (${vals.length} réponse${vals.length>1?'s':''})`,en:`Total ${sum} · Average ${avg} (${vals.length} response${vals.length>1?'s':''})`})}</li>`;
+      }).join('')}</ul>`;
+      html += `<h2>${T({fr:'Tendance — réponses par mois',en:'Trend — responses per month'})}</h2><div class="chart-wrap"><canvas id="chartTrendDomain"></canvas></div>`;
+      if (choiceFields.length) html += `<h2>${T({fr:'Répartition des choix',en:'Breakdown of choices'})}</h2>`;
+      choiceFields.forEach((f,i) => html += `<p class="chart-title">${esc(T(f.label))}</p><div class="chart-wrap"><canvas id="chartField${i}"></canvas></div>`);
+      if (textFields.length) {
+        const recents = filtered.filter(r => textFields.some(f => r.data[f.name])).slice(0,5);
+        html += `<h2>${T({fr:'Derniers témoignages',en:'Latest testimonies'})}</h2><ul class="info">${recents.length ? recents.map(r => {
+          const f = textFields.find(f => r.data[f.name]); const v = String(r.data[f.name]);
+          return `<li><b>${esc(nameOf(r))} — ${esc(T(f.label))}</b>${esc(v.slice(0,220))}${v.length > 220 ? '…' : ''}</li>`;
+        }).join('') : `<li>${T({fr:"Aucun témoignage partagé pour l'instant.",en:'No testimony shared yet.'})}</li>`}</ul>`;
+      }
+      html += `<table class="print-only print-table"><thead><tr><th>${T({fr:'Nom',en:'Name'})}</th><th>${T({fr:'Date',en:'Date'})}</th>${numberFields.map(f => `<th>${esc(T(f.label))}</th>`).join('')}${choiceFields.map(f => `<th>${esc(T(f.label))}</th>`).join('')}</tr></thead><tbody>${filtered.map(r => {
+        const numCells = numberFields.map(f => `<td>${esc(r.data[f.name] ?? '')}</td>`).join('');
+        const choiceCells = choiceFields.map(f => { const v = r.data[f.name]; const vals = Array.isArray(v) ? v : [v]; const labels = vals.map(x => { const o = f.options.find(o => o.value === x); return o ? T(o) : x; }).filter(Boolean); return `<td>${esc(labels.join(', '))}</td>`; }).join('');
+        return `<tr><td>${esc(nameOf(r))}</td><td>${new Date(r.created_at).toLocaleDateString(LANG==='fr'?'fr-FR':'en-US')}</td>${numCells}${choiceCells}</tr>`;
+      }).join('')}</tbody></table>`;
+      body.innerHTML = html;
+      statBar('chartTrendDomain', trendMonths.map(monthLabel), trendMonths.map(m => trend[m] || 0), T(domain.label));
+      choiceFields.forEach((f,i) => {
+        const counts = Object.fromEntries(f.options.map(o => [o.value,0]));
+        filtered.forEach(r => { const v = r.data[f.name]; (Array.isArray(v) ? v : [v]).forEach(x => { if (counts[x] !== undefined) counts[x]++; }); });
+        statBar(`chartField${i}`, f.options.map(o => T(o)), f.options.map(o => counts[o.value]), T(f.label));
+      });
+      $('#monthFilter').onchange = e => renderDomain(e.target.value || null);
+    };
+    renderDomain(null);
   } catch (x) { body.innerHTML = `<p class="err">${T({fr:'Erreur de chargement : ',en:'Loading error: '})}${esc(x.message)}</p>`; }
 }
 
@@ -423,7 +632,7 @@ async function route() {
   else if (h[0] === 'admin' && u.is_admin) await viewAdmin(u);
   else if (d) viewForm(d);
   else if (h[0] === 'profil') viewProfile(u);
-  else viewHome(u);
+  else await viewHome(u);
   updateInstallUI();
 }
 document.addEventListener('change', e => {
