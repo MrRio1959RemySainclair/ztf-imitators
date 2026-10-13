@@ -8,6 +8,10 @@ const SUN_ICON = ic('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9
 const MOON_ICON = ic('<path d="M20 14.5A8 8 0 019.5 4 8 8 0 1020 14.5z"/>');
 const ADMIN_ICON = ic('<path d="M4 18h16"/><path d="M7 18V9M12 18V5M17 18v-7"/>');
 const USER_ICON = ic('<circle cx="12" cy="8.3" r="3.5"/><path d="M5 19c1.4-2.8 4-4.2 7-4.2s5.6 1.4 7 4.2"/>');
+const HOME_ICON = ic('<path d="M4 11.5L12 4l8 7.5"/><path d="M6 10v9h12v-9"/>');
+const TEAM_ICON = ic('<circle cx="9" cy="8.5" r="3"/><path d="M3.5 19c1.1-2.6 3-4 5.5-4s4.4 1.4 5.5 4"/><circle cx="17" cy="9" r="2.3"/><path d="M15.2 12c1.9.3 3.3 1.5 4.3 3.8"/>');
+const SETTINGS_ICON = ic('<circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a1.7 1.7 0 000-3l1-1.7-1.7-1.7-1.7 1a1.7 1.7 0 00-3 0l-1-1.7-1.7 1.7 1 1.7a1.7 1.7 0 000 3l-1 1.7 1.7 1.7 1.7-1a1.7 1.7 0 003 0l1.7 1 1.7-1.7z"/>');
+const STATS_ICON = ic('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>');
 
 /* ---------- Langue & thème (choix de la personne, gardés sur cet appareil) ---------- */
 let LANG = localStorage.getItem('ztf:lang') || 'fr';
@@ -40,6 +44,18 @@ function updateInstallUI() {
     if (isIOS) { b.hidden = false; b.dataset.mode = 'ios'; return; }
     b.hidden = true;
   });
+}
+function renderBottomNav(active) {
+  const el = $('#bottomNav'); if (!el) return;
+  const items = [
+    ['team', TEAM_ICON, {fr:'Équipe',en:'Team'}],
+    ['stats', STATS_ICON, {fr:'Stats',en:'Stats'}],
+    ['', HOME_ICON, {fr:'Accueil',en:'Home'}],
+    ['parametres', SETTINGS_ICON, {fr:'Objectifs',en:'Goals'}],
+    ['profil', USER_ICON, {fr:'Profil',en:'Profile'}],
+  ];
+  el.innerHTML = `<nav class="bottom-nav">${items.map(([key,icon,label]) => `<a href="#/${key}" class="${active===key?'on':''}">${icon}<span>${T(label)}</span></a>`).join('')}</nav>`;
+  el.hidden = false;
 }
 document.addEventListener('click', async e => {
   const b = e.target.closest('#installBtn'); if (!b) return;
@@ -220,6 +236,7 @@ const ACCOUNT_FIELDS = [
   { name:'faiseur_email', label:{fr:'Son email',en:'Their email'}, type:'email' },
   { name:'camp_niveau', label:{fr:'Dernière participation aux camps bibliques internationaux à Koumé-Bertoua',en:'Last attendance at the Koumé-Bertoua international Bible camps'}, type:'radio', required:true, options:[O('fondation','Fondation','Foundation'),O('leadeur','Leadeur','Leader')] },
   { name:'camp_annee', label:{fr:'Année',en:'Year'}, type:'number', required:true, attrs:'min="1970" max="2100" inputmode="numeric"' },
+  { name:'invite_code_used', label:{fr:"Code d'invitation (si quelqu'un t'a amené à imiter)",en:'Invitation code (if someone invited you)'}, hint:{fr:'Facultatif',en:'Optional'} },
   { name:'password', label:{fr:'Mot de passe',en:'Password'}, type:'password', required:true, min:6, autocomplete:'new-password' },
 ];
 
@@ -246,10 +263,11 @@ const api = {
     if (error) return null;
     return currentUser = data;
   },
-  async register({ password, email, ...meta }) {
+  async register({ password, email, invite_code_used, ...meta }) {
     const { data, error } = await sb.auth.signUp({ email, password, options: { data: meta } });
     if (error) throw Error(T(authErrorFr(error)));
     if (!data.session) throw Error(T({ fr:'Compte créé. Vérifiez votre boîte mail pour confirmer votre adresse, puis connectez-vous.', en:'Account created. Check your email to confirm your address, then log in.' }));
+    if (invite_code_used && invite_code_used.trim()) { try { await sb.rpc('accept_invite', { p_code: invite_code_used.trim() }); } catch (e) {} }
     const { data: profile, error: e2 } = await sb.from('profiles').select('*').eq('id', data.user.id).single();
     if (e2) throw Error(T({ fr:"Compte créé, mais le profil n'a pas pu être chargé. Réessayez de vous connecter.", en:'Account created, but the profile could not be loaded. Try logging in again.' }));
     return currentUser = profile;
@@ -266,6 +284,49 @@ const api = {
     const user = await api.me();
     const { error } = await sb.from('submissions').insert({ user_id: user.id, domain, data });
     if (error) throw Error(T({ fr:"L'enregistrement a échoué : ", en:'Saving failed: ' }) + error.message);
+  },
+  async setDomaines(domaines) {
+    const user = await api.me();
+    const { error } = await sb.from('profiles').update({ domaines }).eq('id', user.id);
+    if (error) throw Error(T({ fr:"La mise à jour a échoué : ", en:'Update failed: ' }) + error.message);
+    currentUser = { ...currentUser, domaines };
+  },
+  async team() {
+    const user = await api.me();
+    const { data, error } = await sb.from('profiles').select('id,nom,telephone,province').eq('invited_by', user.id);
+    if (error) throw Error(error.message);
+    return data || [];
+  },
+  async monthActual(month) {
+    const user = await api.me();
+    const { data, error } = await sb.from('submissions').select('domain,created_at').eq('user_id', user.id).gte('created_at', month+'-01T00:00:00.000Z');
+    if (error) return {};
+    const counts = {};
+    (data || []).forEach(r => { if (monthKey(r.created_at) === month) counts[r.domain] = (counts[r.domain] || 0) + 1; });
+    return counts;
+  },
+  async myGoals(month) {
+    const user = await api.me();
+    const { data, error } = await sb.from('goals').select('domain,target').eq('user_id', user.id).eq('month', month);
+    if (error) throw Error(error.message);
+    return Object.fromEntries((data || []).map(g => [g.domain, g.target]));
+  },
+  async saveGoals(month, values) {
+    const user = await api.me();
+    const rows = Object.entries(values).filter(([,v]) => v !== '' && v !== null && v !== undefined).map(([domain, target]) => ({ user_id:user.id, domain, month, target:Number(target) }));
+    const { error } = await sb.from('goals').upsert(rows, { onConflict:'user_id,domain,month' });
+    if (error) throw Error(T({ fr:"L'enregistrement a échoué : ", en:'Saving failed: ' }) + error.message);
+  },
+  async myDomainHistory(domainId) {
+    const user = await api.me();
+    const { data, error } = await sb.from('submissions').select('created_at').eq('user_id', user.id).eq('domain', domainId).order('created_at', { ascending:true });
+    if (error) throw Error(error.message);
+    return data || [];
+  },
+  async leaderboard(domainId, month) {
+    const { data, error } = await sb.rpc('leaderboard', { p_domain:domainId, p_month:month || null });
+    if (error) throw Error(error.message);
+    return data || [];
   },
 };
 
@@ -314,9 +375,146 @@ function viewAuth(mode) {
   <form id="auth"><p class="err" role="alert"></p>${fields.map(field).join('')}<button class="btn">${reg?T({fr:'Créer mon compte',en:'Create my account'}):T({fr:'Se connecter',en:'Log in'})}</button></form></main>`;
   $('#auth').onsubmit = async e => {
     e.preventDefault(); const b = e.target.querySelector('.btn'); b.disabled = true;
-    try { const d = formData(e.target); reg ? await api.register(d) : await api.login(d.email, d.password); location.hash = '#/'; await route(); }
+    try { const d = formData(e.target); reg ? await api.register(d) : await api.login(d.email, d.password); location.hash = reg ? '#/engagement' : '#/'; await route(); }
     catch (x) { e.target.querySelector('.err').textContent = x.message; b.disabled = false; }
   };
+}
+
+function viewEngagement(u) {
+  const chosen = new Set(u.domaines || []);
+  $('#app').innerHTML = `${hero(T({fr:"S'engager",en:'Commitments'}), T({fr:"Choisis les domaines dans lesquels tu souhaites t'engager",en:'Choose the areas you want to commit to'}))}
+  <main>
+    <form id="engagement">
+      <p class="err" role="alert"></p>
+      <fieldset><legend>${T({fr:"Domaines d'imitation",en:'Areas of imitation'})}</legend>
+        <div class="opt-row">${DOMAINS.map(d => `<label class="opt"><input type="checkbox" name="domaines" value="${d.id}" ${chosen.has(d.id)?'checked':''}>${ic(d.icon)}<span>${T(d.label)}</span></label>`).join('')}</div>
+      </fieldset>
+      <button class="btn">${T({fr:'Valider',en:'Confirm'})}</button>
+    </form>
+  </main>`;
+  $('#engagement').onsubmit = async e => {
+    e.preventDefault();
+    const picked = [...e.target.querySelectorAll('input[name="domaines"]:checked')].map(i => i.value);
+    const errEl = e.target.querySelector('.err');
+    if (!picked.length) { errEl.textContent = T({fr:'Choisis au moins un domaine.',en:'Choose at least one area.'}); return; }
+    errEl.textContent = '';
+    const btn = e.target.querySelector('.btn'); btn.disabled = true;
+    try { await api.setDomaines(picked); location.hash = '#/'; await route(); }
+    catch (x) { errEl.textContent = x.message; btn.disabled = false; }
+  };
+}
+
+/* ---------- Équipe ---------- */
+async function viewTeam(u) {
+  $('#app').innerHTML = `${hero(T({fr:'Équipe',en:'Team'}), T({fr:"Les personnes que tu as amenées à imiter",en:'The people you brought to imitate'}))}
+  <main>
+    <div class="invite-card">
+      <div class="progress-label">${T({fr:'Ton code d\u2019invitation',en:'Your invitation code'})}</div>
+      <div class="invite-code">${esc(u.invite_code || '—')}</div>
+      <p class="hint" style="margin:6px 0 0">${T({fr:'Partage-le avec les personnes que tu amènes à imiter : elles le saisissent à leur inscription.',en:'Share it with the people you bring to imitate: they enter it when they sign up.'})}</p>
+    </div>
+    <div id="teamBody"><p class="hint">${T({fr:'Chargement…',en:'Loading…'})}</p></div>
+  </main>`;
+  const body = $('#teamBody');
+  try {
+    const team = await api.team();
+    if (!team.length) { body.innerHTML = `<div class="empty">${TEAM_ICON}<p>${T({fr:"Personne ne s'est encore inscrit avec ton code d'invitation.",en:"No one has signed up with your invitation code yet."})}</p></div>`; return; }
+    body.innerHTML = `<p class="hint">${T({fr:`${team.length} personne${team.length>1?'s':''} dans ton équipe.`,en:`${team.length} ${team.length>1?'people':'person'} in your team.`})}</p>
+    <ul class="info">${team.map(p => `<li><b>${esc(p.nom)}</b>${esc(p.province || '—')}${p.telephone ? ' · ' + esc(p.telephone) : ''}</li>`).join('')}</ul>`;
+  } catch (x) { body.innerHTML = `<p class="err">${T({fr:'Erreur de chargement : ',en:'Loading error: '})}${esc(x.message)}</p>`; }
+}
+
+/* ---------- Objectifs (Paramètres) ---------- */
+async function viewSettings(u) {
+  const month = new Date().toISOString().slice(0,7);
+  const monthTxt = new Date(month+'-01').toLocaleDateString(LANG==='fr'?'fr-FR':'en-US', { month:'long', year:'numeric' });
+  const list = (u.domaines && u.domaines.length) ? DOMAINS.filter(d => u.domaines.includes(d.id)) : DOMAINS;
+  $('#app').innerHTML = `${hero(T({fr:'Objectifs',en:'Goals'}), T({fr:`Objectifs pour ${monthTxt}`,en:`Goals for ${monthTxt}`}))}
+  <main><div id="goalsBody"><p class="hint">${T({fr:'Chargement…',en:'Loading…'})}</p></div></main>`;
+  const body = $('#goalsBody');
+  clearCharts();
+  try {
+    const [current, actual] = await Promise.all([api.myGoals(month), api.monthActual(month)]);
+    const withGoal = list.filter(d => current[d.id] != null && current[d.id] > 0);
+    body.innerHTML = `
+      ${withGoal.length ? `<h2>${T({fr:'Ce mois-ci : objectif vs réalisé',en:"This month: goal vs. actual"})}</h2>
+      <div class="ratio-grid">${withGoal.map((d,i) => {
+        const target = current[d.id], done = actual[d.id] || 0, pct = Math.min(100, Math.round(done/target*100));
+        return `<div class="ratio-card"><div class="donut-mini"><canvas id="ratio${i}"></canvas><span class="donut-pct">${pct}%</span></div><div class="ratio-label">${T(d.label)}</div><div class="hint" style="margin:0">${T({fr:`${done} sur ${target}`,en:`${done} of ${target}`})}</div></div>`;
+      }).join('')}</div>` : ''}
+      <h2>${T({fr:"Objectifs du mois (nombre de comptes-rendus visés)",en:'Monthly goals (target number of reports)'})}</h2>
+      <form id="goals"><p class="err" role="alert"></p>
+      ${list.map(d => `<div class="fld"><label for="g_${d.id}">${T(d.label)}</label><input id="g_${d.id}" name="${d.id}" type="number" min="0" inputmode="numeric" value="${current[d.id] ?? ''}" placeholder="${esc(T({fr:'Objectif du mois',en:'Monthly target'}))}"></div>`).join('')}
+      <button class="btn">${T({fr:'Enregistrer',en:'Save'})}</button>
+    </form>`;
+    withGoal.forEach((d,i) => {
+      const target = current[d.id], done = Math.min(actual[d.id] || 0, target);
+      statDonut(`ratio${i}`, [T({fr:'Réalisé',en:'Done'}),T({fr:'Restant',en:'Remaining'})], [done, target-done], ['#1868C4','#D8E7F6'], false);
+    });
+    $('#goals').onsubmit = async e => {
+      e.preventDefault(); const btn = e.target.querySelector('.btn'); btn.disabled = true;
+      const values = Object.fromEntries(list.map(d => [d.id, e.target.querySelector(`#g_${d.id}`).value]));
+      try { await api.saveGoals(month, values); toast(T({fr:'Objectifs enregistrés',en:'Goals saved'})); location.hash = '#/parametres'; await route(); }
+      catch (x) { e.target.querySelector('.err').textContent = x.message; }
+      btn.disabled = false;
+    };
+  } catch (x) { body.innerHTML = `<p class="err">${T({fr:'Erreur de chargement : ',en:'Loading error: '})}${esc(x.message)}</p>`; }
+}
+
+/* ---------- Statistiques ---------- */
+async function viewStats(u) {
+  const list = (u.domaines && u.domaines.length) ? DOMAINS.filter(d => u.domaines.includes(d.id)) : DOMAINS;
+  $('#app').innerHTML = `${hero(T({fr:'Statistiques',en:'Statistics'}),'')}
+  <main>
+    <nav class="tabs"><a href="#" data-tab="perso" class="on">${T({fr:'Mon évolution',en:'My progress'})}</a><a href="#" data-tab="classement">${T({fr:'Classement',en:'Leaderboard'})}</a></nav>
+    <div id="statsBody"></div>
+  </main>`;
+  const body = $('#statsBody');
+  let mode = 'perso', selDomain = list[0]?.id;
+
+  const renderPerso = async () => {
+    body.innerHTML = `<div class="admin-filter"><label>${T({fr:'Domaine',en:'Domain'})}</label><select id="statDomain">${list.map(d => `<option value="${d.id}" ${d.id===selDomain?'selected':''}>${T(d.label)}</option>`).join('')}</select></div><div id="statsPersoBody"><p class="hint">${T({fr:'Chargement…',en:'Loading…'})}</p></div>`;
+    $('#statDomain').onchange = e => { selDomain = e.target.value; renderPerso(); };
+    const inner = $('#statsPersoBody');
+    clearCharts();
+    try {
+      const rows = await api.myDomainHistory(selDomain);
+      if (!rows.length) { inner.innerHTML = `<div class="empty"><p>${T({fr:"Aucun compte-rendu envoyé pour ce domaine pour l'instant.",en:'No report submitted for this domain yet.'})}</p></div>`; return; }
+      const months = lastMonths(12);
+      const perMonth = Object.fromEntries(months.map(m => [m,0]));
+      rows.forEach(r => { const k = monthKey(r.created_at); if (perMonth[k] !== undefined) perMonth[k]++; });
+      const thisYear = new Date().getFullYear(), lastYear = thisYear - 1;
+      const totalThisYear = rows.filter(r => new Date(r.created_at).getFullYear() === thisYear).length;
+      const totalLastYear = rows.filter(r => new Date(r.created_at).getFullYear() === lastYear).length;
+      inner.innerHTML = `<ul class="info stats">
+          <li><b>${T({fr:'Comptes-rendus envoyés, au total',en:'Reports submitted, total'})}</b>${rows.length}</li>
+          <li><b>${T({fr:`Cette année (${thisYear})`,en:`This year (${thisYear})`})}</b>${totalThisYear}</li>
+          <li><b>${T({fr:`Année dernière (${lastYear})`,en:`Last year (${lastYear})`})}</b>${totalLastYear}</li>
+        </ul>
+        <h2>${T({fr:'Évolution sur 12 mois',en:'12-month trend'})}</h2><div class="chart-wrap"><canvas id="chartPerso"></canvas></div>`;
+      statBar('chartPerso', months.map(monthLabel), months.map(m => perMonth[m] || 0), T({fr:'Comptes-rendus',en:'Reports'}));
+    } catch (x) { inner.innerHTML = `<p class="err">${esc(x.message)}</p>`; }
+  };
+
+  const renderClassement = async () => {
+    body.innerHTML = `<div class="admin-filter"><label>${T({fr:'Domaine',en:'Domain'})}</label><select id="lbDomain">${DOMAINS.map(d => `<option value="${d.id}" ${d.id===selDomain?'selected':''}>${T(d.label)}</option>`).join('')}</select></div><p class="hint">${T({fr:'Classement par nombre de comptes-rendus envoyés, tous imitateurs confondus.',en:'Ranked by number of reports submitted, across all imitators.'})}</p><div id="lbBody"><p class="hint">${T({fr:'Chargement…',en:'Loading…'})}</p></div>`;
+    $('#lbDomain').onchange = e => { selDomain = e.target.value; renderClassement(); };
+    const inner = $('#lbBody');
+    try {
+      const rows = await api.leaderboard(selDomain, null);
+      if (!rows.length) { inner.innerHTML = `<div class="empty"><p>${T({fr:'Aucun classement disponible pour ce domaine pour l\u2019instant.',en:'No leaderboard available for this domain yet.'})}</p></div>`; return; }
+      inner.innerHTML = `<ul class="info">${rows.map((r,i) => `<li><b>#${i+1} ${esc(r.nom)}${r.nom===u.nom?' · '+T({fr:'toi',en:'you'}):''}</b>${T({fr:`${r.total} compte${r.total>1?'s':''}-rendu${r.total>1?'s':''}`,en:`${r.total} report${r.total>1?'s':''}`})}</li>`).join('')}</ul>`;
+    } catch (x) { inner.innerHTML = `<p class="err">${esc(x.message)}</p>`; }
+  };
+
+  $('main .tabs').addEventListener('click', e => {
+    const a = e.target.closest('a[data-tab]'); if (!a) return; e.preventDefault();
+    if (a.dataset.tab === mode) return;
+    mode = a.dataset.tab;
+    $('main .tabs a').forEach(x => x.classList.toggle('on', x === a));
+    mode === 'perso' ? renderPerso() : renderClassement();
+  });
+  await renderPerso();
 }
 
 async function fetchMonthProgress(userId) {
@@ -327,17 +525,22 @@ async function fetchMonthProgress(userId) {
 }
 async function viewHome(u) {
   const adminLink = u.is_admin ? `<a class="pill icon-only" href="#/admin" aria-label="${T({fr:'Dashboard admin',en:'Admin dashboard'})}" title="${T({fr:'Dashboard admin',en:'Admin dashboard'})}">${ADMIN_ICON}</a>` : '';
-  $('#app').innerHTML = `${hero('ZTF Imitators', T({fr:'Bienvenue, ',en:'Welcome, '})+esc(u.nom.split(' ')[0]), adminLink + `<a class="pill icon-only" href="#/profil" aria-label="${T({fr:'Mon compte',en:'My account'})}" title="${T({fr:'Mon compte',en:'My account'})}">${USER_ICON}</a>`)}
+  $('#app').innerHTML = `${hero('ZTF Imitators', T({fr:'Bienvenue, ',en:'Welcome, '})+esc(u.nom.split(' ')[0]), adminLink)}
   <main><div id="homeBody"><p class="hint">${T({fr:'Chargement…',en:'Loading…'})}</p></div></main>`;
   const body = $('#homeBody');
+  const chosen = DOMAINS.filter(d => (u.domaines || []).includes(d.id));
+  if (!chosen.length) {
+    body.innerHTML = `<div class="empty">${LOGO}<p>${T({fr:"Tu n'as pas encore choisi tes domaines d'engagement.",en:"You haven't chosen your commitment areas yet."})}</p><a class="btn" href="#/engagement" style="display:inline-block;width:auto;padding:12px 22px;margin-top:10px">${T({fr:'Choisir mes domaines',en:'Choose my areas'})}</a></div>`;
+    return;
+  }
   const done = await fetchMonthProgress(u.id);
-  const n = done.size, total = DOMAINS.length;
+  const n = [...done].filter(id => chosen.some(d => d.id === id)).length, total = chosen.length;
   body.innerHTML = `
     <div class="progress-card">
-      <div class="progress-label">${T({fr:`${n} domaine(s)${n>1?'s':''} sur ${total} renseigné(s)${n>1?'s':''} ce mois-ci`,en:`${n} of ${total} domains submitted this month`})}</div>
+      <div class="progress-label">${T({fr:`${n} domaine${n>1?'s':''} sur ${total} renseigné${n>1?'s':''} ce mois-ci`,en:`${n} of ${total} domains submitted this month`})}</div>
       <div class="prog"><i style="width:${total ? Math.round(n/total*100) : 0}%"></i></div>
     </div>
-    <ul class="ledger">${DOMAINS.map((d,i) => `<li><a class="row" href="#/d/${d.id}"><span class="idx">${String(i+1).padStart(2,'0')}</span>${ic(d.icon)}<span class="row-name">${T(d.label)}</span><span class="mark ${done.has(d.id)?'done':'pending'}"></span></a></li>`).join('')}</ul>`;
+    <ul class="ledger">${chosen.map((d,i) => `<li><a class="row" href="#/d/${d.id}"><span class="idx">${String(i+1).padStart(2,'0')}</span>${ic(d.icon)}<span class="row-name">${T(d.label)}</span><span class="mark ${done.has(d.id)?'done':'pending'}"></span></a></li>`).join('')}</ul>`;
 }
 
 function viewForm(d) {
@@ -361,7 +564,18 @@ function statBar(canvasId, labels, values, label) {
   charts.push(new Chart(ctx, {
     type:'bar',
     data:{ labels, datasets:[{ label, data:values, backgroundColor:'#1868C4', borderRadius:6 }] },
-    options:{ responsive:true, plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true, ticks:{ precision:0 } } } },
+    options:{ responsive:true, plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true, ticks:{ precision:0 } } },
+      animation:{ duration:900, easing:'easeOutQuart', delay:c => c.type === 'data' ? c.dataIndex * 60 : 0 } },
+  }));
+}
+const DONUT_COLORS = ['#1868C4','#5fc2ff','#0E4E96','#9bd4ff','#c7e6ff','#063862'];
+function statDonut(canvasId, labels, values, colors, showLegend) {
+  const ctx = document.getElementById(canvasId); if (!ctx) return;
+  charts.push(new Chart(ctx, {
+    type:'doughnut',
+    data:{ labels, datasets:[{ data:values, backgroundColor:colors || DONUT_COLORS, borderWidth:0 }] },
+    options:{ responsive:true, cutout:'66%', plugins:{ legend:{ display:!!showLegend, position:'bottom', labels:{ boxWidth:12, font:{ size:11 } } } },
+      animation:{ animateRotate:true, animateScale:true, duration:900, easing:'easeOutQuart' } },
   }));
 }
 const monthKey = iso => String(iso).slice(0,7);
@@ -545,6 +759,7 @@ async function viewAdmin(u) {
           <li><b>${T({fr:'Taux de participation ce mois',en:'Participation rate this month'})}</b>${T({fr:`${pct}\u00a0% (${ov.activeThisMonth} sur ${ov.totalUsers})`,en:`${pct}% (${ov.activeThisMonth} of ${ov.totalUsers})`})}</li>
           <li><b>${T({fr:'Camps Koumé-Bertoua',en:'Koumé-Bertoua camps'})}</b>${T({fr:`Fondation ${ov.campCounts.fondation} · Leadeur ${ov.campCounts.leadeur}`,en:`Foundation ${ov.campCounts.fondation} · Leader ${ov.campCounts.leadeur}`})}</li>
         </ul>
+        <h2>${T({fr:'Camps Koumé-Bertoua',en:'Koumé-Bertoua camps'})}</h2><div class="chart-wrap donut-wrap"><canvas id="chartCamps"></canvas></div>
         <h2>${T({fr:'Utilisateurs inscrits et actifs dans le monde',en:'Registered and active users worldwide'})}</h2>
         <div class="admin-map-panel"><div id="adminUsersMap" class="admin-world-map"></div></div>
         <h2>${T({fr:'Réponses par domaine',en:'Responses by domain'})}</h2><div class="chart-wrap"><canvas id="chartOverview"></canvas></div>
@@ -553,6 +768,7 @@ async function viewAdmin(u) {
         <table class="print-only print-table"><thead><tr><th>${T({fr:'Domaine',en:'Domain'})}</th><th>${T({fr:'Réponses',en:'Responses'})}</th></tr></thead>
         <tbody>${DOMAINS.map(d => `<tr><td>${esc(T(d.label))}</td><td>${ov.counts[d.id] || 0}</td></tr>`).join('')}</tbody></table>`;
       renderAdminUsersMap(usersMap);
+      statDonut('chartCamps', [T({fr:'Fondation',en:'Foundation'}),T({fr:'Leadeur',en:'Leader'})], [ov.campCounts.fondation, ov.campCounts.leadeur], null, true);
       statBar('chartOverview', DOMAINS.map(d => T(d.label)), DOMAINS.map(d => ov.counts[d.id] || 0), T({fr:'Réponses',en:'Responses'}));
       statBar('chartTrend', ov.months.map(monthLabel), ov.months.map(m => ov.trend[m] || 0), T({fr:'Réponses',en:'Responses'}));
       if (topProvinces.length) statBar('chartProvince', topProvinces.map(p => p[0]), topProvinces.map(p => p[1]), T({fr:'Imitateurs',en:'Imitators'}));
@@ -591,7 +807,7 @@ async function viewAdmin(u) {
       }).join('')}</ul>`;
       html += `<h2>${T({fr:'Tendance — réponses par mois',en:'Trend — responses per month'})}</h2><div class="chart-wrap"><canvas id="chartTrendDomain"></canvas></div>`;
       if (choiceFields.length) html += `<h2>${T({fr:'Répartition des choix',en:'Breakdown of choices'})}</h2>`;
-      choiceFields.forEach((f,i) => html += `<p class="chart-title">${esc(T(f.label))}</p><div class="chart-wrap"><canvas id="chartField${i}"></canvas></div>`);
+      choiceFields.forEach((f,i) => html += `<p class="chart-title">${esc(T(f.label))}</p><div class="chart-wrap donut-wrap"><canvas id="chartField${i}"></canvas></div>`);
       if (textFields.length) {
         const recents = filtered.filter(r => textFields.some(f => r.data[f.name])).slice(0,5);
         html += `<h2>${T({fr:'Derniers témoignages',en:'Latest testimonies'})}</h2><ul class="info">${recents.length ? recents.map(r => {
@@ -609,7 +825,7 @@ async function viewAdmin(u) {
       choiceFields.forEach((f,i) => {
         const counts = Object.fromEntries(f.options.map(o => [o.value,0]));
         filtered.forEach(r => { const v = r.data[f.name]; (Array.isArray(v) ? v : [v]).forEach(x => { if (counts[x] !== undefined) counts[x]++; }); });
-        statBar(`chartField${i}`, f.options.map(o => T(o)), f.options.map(o => counts[o.value]), T(f.label));
+        statDonut(`chartField${i}`, f.options.map(o => T(o)), f.options.map(o => counts[o.value]), null, true);
       });
       $('#monthFilter').onchange = e => renderDomain(e.target.value || null);
     };
@@ -620,7 +836,9 @@ async function viewAdmin(u) {
 function viewProfile(u) {
   const rows = ACCOUNT_FIELDS.filter(f => f.name !== 'password').map(f => `<li><b>${esc(T(f.label))}</b>${esc(fieldValueDisplay(f,u))}</li>`).join('');
   $('#app').innerHTML = `${hero(T({fr:'Mon compte',en:'My account'}),'','<a class="back" href="#/">'+T({fr:'← Retour',en:'← Back'})+'</a>','compact')}
-  <main><ul class="info">${rows}</ul><button class="btn" id="out">${T({fr:'Se déconnecter',en:'Log out'})}</button></main>`;
+  <main><ul class="info">${rows}</ul>
+  <a class="btn" href="#/engagement" style="display:block;text-align:center;text-decoration:none;margin-bottom:12px">${T({fr:"Mes domaines d'engagement",en:'My commitment areas'})}</a>
+  <button class="btn" id="out">${T({fr:'Se déconnecter',en:'Log out'})}</button></main>`;
   $('#out').onclick = async () => { await api.logout(); location.hash = '#/connexion'; await route(); };
 }
 
@@ -628,11 +846,18 @@ function viewProfile(u) {
 async function route() {
   const u = await api.me(), h = location.hash.slice(2).split('/');
   const d = h[0] === 'd' ? DOMAINS.find(x => x.id === h[1]) : null;
-  if (!u) viewAuth(h[0] === 'connexion' ? 'login' : 'register');
-  else if (h[0] === 'admin' && u.is_admin) await viewAdmin(u);
-  else if (d) viewForm(d);
-  else if (h[0] === 'profil') viewProfile(u);
-  else await viewHome(u);
+  if (!u) { viewAuth(h[0] === 'connexion' ? 'login' : 'register'); $('#bottomNav').hidden = true; }
+  else {
+    if (h[0] === 'admin' && u.is_admin) await viewAdmin(u);
+    else if (h[0] === 'engagement') viewEngagement(u);
+    else if (h[0] === 'team') await viewTeam(u);
+    else if (h[0] === 'parametres') await viewSettings(u);
+    else if (h[0] === 'stats') await viewStats(u);
+    else if (d) viewForm(d);
+    else if (h[0] === 'profil') viewProfile(u);
+    else await viewHome(u);
+    renderBottomNav(h[0]);
+  }
   updateInstallUI();
 }
 document.addEventListener('change', e => {

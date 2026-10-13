@@ -35,6 +35,7 @@ fieldset{border:0;padding:0;margin-bottom:16px}
 .opt label{flex:1;margin:0;font-weight:400}
 .opt input.nb{width:110px;height:auto;padding:8px 10px}
 .opt input.nb:disabled{opacity:.45}
+.opt svg{width:20px;height:20px;color:var(--sky-d);flex-shrink:0}
 /* bandeau segmenté (questions à 2 choix, ex. Oui/Non) */
 fieldset.seg .opt-row{display:flex;border:1.5px solid var(--line);border-radius:10px;overflow:hidden}
 fieldset.seg .opt{flex:1;margin:0;border:0;border-right:1.5px solid var(--line);border-radius:0;justify-content:center;box-shadow:none}
@@ -169,3 +170,24 @@ input:not([type=radio]):not([type=checkbox]):focus,select:focus,textarea:focus{o
 /* ---------- Logo ---------- */
 .bar .badge{width:44px;height:44px;border-radius:50%;border:2px solid #fff;box-shadow:0 2px 8px rgba(11,41,71,.3);animation:float 4s ease-in-out infinite}
 .hero h1 .brand{display:block;margin:0 auto;width:min(300px,80%);height:auto;background:#fff;border-radius:16px;padding:6px 10px;box-shadow:0 8px 20px -10px rgba(11,41,71,.5)}
+
+/* ---------- Barre de navigation basse ---------- */
+#bottomNav{position:fixed;left:0;right:0;bottom:0;z-index:20}
+.bottom-nav{display:flex;background:var(--card);border-top:1.5px solid var(--line);padding:6px 4px calc(6px + env(safe-area-inset-bottom,0px));box-shadow:0 -4px 16px -8px rgba(11,41,71,.25)}
+.bottom-nav a{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 2px;color:#5C7A96;font-size:.66rem;font-weight:700;border-radius:10px;transition:color .15s,background .15s}
+.bottom-nav a svg{width:22px;height:22px}
+.bottom-nav a.on{color:var(--sky-d);background:var(--sky-p)}
+body:has(#bottomNav:not([hidden])) main{padding-bottom:calc(92px + env(safe-area-inset-bottom,0px))}
+@media print{#bottomNav{display:none!important}}
+
+/* ---------- Donuts & ratios (Objectifs) ---------- */
+.ratio-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:14px;margin-bottom:24px}
+.ratio-card{text-align:center;background:var(--card);border:1.5px solid var(--line);border-radius:14px;padding:12px 8px}
+.donut-mini{position:relative;width:76px;height:76px;margin:0 auto 8px}
+.donut-pct{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.8rem;color:var(--ink)}
+.ratio-label{font-weight:700;font-size:.78rem;margin-bottom:2px}
+.donut-wrap canvas{max-height:240px;margin:0 auto;display:block}
+
+/* ---------- Équipe / code d'invitation ---------- */
+.invite-card{background:var(--card);border:1.5px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:18px;text-align:center}
+.invite-code{font-size:1.7rem;font-weight:800;letter-spacing:.1em;color:var(--sky-d);margin:4px 0}
